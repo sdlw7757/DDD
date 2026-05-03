@@ -26,10 +26,12 @@ log(){
         DEBUG) echo -e "${Blue}[DEBUG] $MSG${Plain}";;
     esac
 }
+
 err_exit(){
     log "ERROR" "$1"
     exit 1
 }
+
 download_with_retry(){
     local URL=$1
     local OUTPUT=$2
@@ -49,6 +51,7 @@ download_with_retry(){
     log "ERROR" "下载失败（已重试$RETRY次）：$URL"
     return 1
 }
+
 check_md5(){
     local FILE=$1
     local EXPECT_MD5=$2
@@ -62,6 +65,7 @@ check_md5(){
         return 1
     fi
 }
+
 detect_disk(){
     local DISK_LIST=("/dev/vda" "/dev/sda" "/dev/nvme0n1" "/dev/hda")
     for disk in "${DISK_LIST[@]}"; do
@@ -73,6 +77,7 @@ detect_disk(){
     done
     err_exit "未检测到可用系统磁盘！"
 }
+
 # ===================== 新增：一键生成永久短链接 =====================
 make_short_url(){
     clear
@@ -93,6 +98,7 @@ make_short_url(){
         err_exit "生成失败，请检查链接是否有效"
     fi
 }
+
 # ===================== 初始化配置 =====================
 if [ ! -f "$SCRIPT_PATH" ];then
     cp "$0" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH" || err_exit "无法写入全局脚本"
@@ -102,20 +108,23 @@ if [ ! -f "$SCRIPT_PATH" ];then
     log "INFO" "全局别名配置完成！输入 y/Y 即可调用本脚本"
     sleep 1
 fi
+
 [ $EUID -ne 0 ] && err_exit "必须使用root用户执行！"
 mkdir -p "$CACHE_DIR" "$(dirname $LOG_FILE)"
 chmod 700 "$CACHE_DIR"
 clear
+
 log "INFO" "==================== 增强版全能DD脚本 ===================="
 log "INFO" "功能：DD重装 | 面板 | 优化 | 测速 | 硬件 | 路由 | 系统管理 | Docker | 短链接"
 log "WARN" "⚠️ 1-5选项为DD重装，会清空服务器全盘数据！请谨慎操作！"
 echo ""
+
 # ===================== 主菜单（无重复 · 完整版） =====================
 echo "==================== 全能功能主菜单 ===================="
 echo "【1】Ubuntu 全系列版本 DD重装"
 echo "【2】Debian 全系列版本 DD重装"
 echo "【3】CentOS 全系列版本 DD重装"
-echo "【4】Windows Server 全系列 DD重装"
+echo "【4】Windows Server 全系列版本 DD重装"
 echo "【5】自定义国内RAW镜像 DD重装"
 echo ""
 echo "【6】一键安装/修复/清理 宝塔面板"
@@ -135,6 +144,7 @@ echo "【17】安装基础必备工具"
 echo "【18】Docker 一站式管理（安装/卸载/更新/容器）"
 echo "【19】一键生成永久短链接（永不过期）"
 read -p "请输入功能序号（1-19）：" main_opt
+
 # ===================== 功能实现 =====================
 case $main_opt in
     19)
@@ -227,6 +237,7 @@ root hard nofile 65535
 * hard nproc 65535
 EOF
         log "INFO" "文件描述符限制已优化"
+        
         cat > /etc/sysctl.d/99-custom.conf << EOF
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_tw_reuse = 1
@@ -246,17 +257,21 @@ vm.dirty_ratio = 10
 vm.dirty_background_ratio = 5
 EOF
         sysctl --system >/dev/null 2>&1 && log "INFO" "内核参数已优化"
+        
         sed -i 's/^#PermitRootLogin.*/PermitRootLogin prohibit-password/g' /etc/ssh/sshd_config
         sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication no/g' /etc/ssh/sshd_config
         systemctl restart sshd 2>/dev/null || service ssh restart && log "INFO" "SSH安全配置已更新"
+        
         setenforce 0 >/dev/null 2>&1
         sed -i 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
         systemctl disable firewalld >/dev/null 2>&1 || ufw disable >/dev/null 2>&1
         log "INFO" "安全策略已优化"
+        
         echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
         echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
         sysctl -p >/dev/null 2>&1
         log "INFO" "BBR网络加速已开启"
+        
         log "INFO" "✅ 服务器优化完成！建议重启生效"
         read -p "是否立即重启？(y/n):" rboot
         [ "$rboot" = "y" ] && reboot
@@ -442,6 +457,7 @@ EOF
                 *) err_exit "版本选择错误！";;
             esac
         fi
+
         if [ "$main_opt" -eq 2 ]; then
             echo -e "\n--- Debian 全版本 ---"
             echo "1)8 2)9 3)10 4)11 5)12 6)13 7)13.4 8)13.5"
@@ -458,6 +474,7 @@ EOF
                 *) err_exit "版本选择错误！";;
             esac
         fi
+
         if [ "$main_opt" -eq 3 ]; then
             echo -e "\n--- CentOS 全版本 ---"
             echo "1)6 2)7 3)8 4)Stream9 5)Stream10"
@@ -471,6 +488,7 @@ EOF
                 *) err_exit "版本选择错误！";;
             esac
         fi
+
         if [ "$main_opt" -eq 4 ]; then
             echo -e "\n--- Windows Server 全版本 ---"
             echo "1)2012 2)2016 3)2019 4)2022 5)2025预览版"
@@ -484,6 +502,7 @@ EOF
                 *) err_exit "版本选择错误！";;
             esac
         fi
+
         if [ "$main_opt" -eq 5 ]; then
             read -p "请输入自定义国内RAW镜像地址：" img_url
             sysname="自定义国内镜像"
@@ -495,6 +514,7 @@ EOF
                 log "WARN" "自定义镜像未配置MD5校验，风险自负！"
             fi
         fi
+
         echo -e "\n--- 系统密码设置 ---"
         log "INFO" "默认密码：$DEFAULT_PASS"
         read -p "是否修改密码？(y/n)：" change_pass
@@ -511,15 +531,18 @@ EOF
                 fi
             done
         fi
+
         echo -e "\n================================================================"
         log "WARN" "即将DD重装系统：$sysname | 密码：$DEFAULT_PASS"
         log "WARN" "操作将清空磁盘数据，无法恢复！"
         read -p "确认执行请输入 YES（大写），任意键取消：" confirm
         [ "$confirm" != "YES" ] && err_exit "已取消重装操作"
+
         DISK=$(detect_disk)
         IMG_FILENAME=$(basename "$img_url")
         CACHE_FILE="$CACHE_DIR/$IMG_FILENAME"
         USE_CACHE=0
+
         if [ -n "$img_md5" ] && [ -f "$CACHE_FILE" ]; then
             log "INFO" "检测到缓存文件，校验MD5..."
             if check_md5 "$CACHE_FILE" "$img_md5"; then
@@ -530,6 +553,7 @@ EOF
                 rm -f "$CACHE_FILE"
             fi
         fi
+
         if [ $USE_CACHE -eq 1 ]; then
             log "INFO" "从缓存写入磁盘：$DISK"
             dd if="$CACHE_FILE" of="$DISK" bs=$BLOCK_SIZE status=progress conv=fsync
@@ -544,6 +568,7 @@ EOF
                 [ $? -ne 0 ] && err_exit "直写模式写入失败！"
             fi
         fi
+
         if [[ $main_opt -le 3 ]]; then
             log "INFO" "写入root密码..."
             for PART in "${DISK}1" "${DISK}2" "${DISK}p1"; do
@@ -555,6 +580,7 @@ EOF
                 fi
             done
         fi
+
         log "INFO" "✅ $sysname 系统DD重装完成！"
         if [[ $main_opt -le 3 ]]; then
             log "INFO" "Linux登录：root / $DEFAULT_PASS"
