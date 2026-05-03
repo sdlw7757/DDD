@@ -1,9 +1,11 @@
 #!/bin/bash
 # ============================================================
-# 增强版终极全能DD脚本
-# 特性：镜像缓存+断点续传+多磁盘适配+日志记录+交互优化
+# 增强版全能网络安装脚本
+# 特性：Ubuntu/Debian/CentOS 网络自动安装（不依赖RAW镜像）
+#       支持 Ubuntu 20.04/22.04/24.04/26.04
+#       支持 Debian 10/11/12/13
+#       支持 CentOS 7/8/9-stream
 # 快捷唤起：输入 y/Y 直接调用 | 默认密码123456（可自定义）
-# 注意：已移除 Windows DD 重装选项
 # ============================================================
 
 Green="\033[32m"
@@ -15,11 +17,8 @@ Plain="\033[0m"
 SCRIPT_PATH="/usr/local/bin/ddtool.sh"
 LOG_FILE="/var/log/dd_tool.log"
 DEFAULT_PASS="123456"
-CACHE_DIR="/var/cache/dd_images"
 RETRY_TIMES=3
-BLOCK_SIZE="8M"
 
-# ---------------------- 日志函数 ----------------------
 log() {
     local LEVEL=$1
     local MSG=$2
@@ -37,7 +36,6 @@ err_exit() {
     exit 1
 }
 
-# ---------------------- 包管理器智能安装 ----------------------
 smart_install() {
     local pkg="$1"
     if command -v yum &>/dev/null; then
@@ -51,60 +49,11 @@ smart_install() {
     return 0
 }
 
-# ---------------------- 下载与校验 ----------------------
-download_with_retry() {
-    local URL=$1
-    local OUTPUT=$2
-    local RETRY=$RETRY_TIMES
-    log "INFO" "开始下载：$URL （重试次数：$RETRY）"
-    for ((i=1; i<=RETRY; i++)); do
-        wget --no-check-certificate --progress=bar:force -qO "$OUTPUT" "$URL"
-        if [ $? -eq 0 ]; then
-            log "INFO" "下载成功：$OUTPUT"
-            return 0
-        fi
-        log "WARN" "下载失败，第 $i 次重试..."
-        sleep 3
-    done
-    log "ERROR" "下载失败（已重试$RETRY次）：$URL"
-    return 1
-}
-
-check_md5() {
-    local FILE=$1
-    local EXPECT_MD5=$2
-    local ACTUAL_MD5=$(md5sum "$FILE" | awk '{print $1}')
-    if [ "$ACTUAL_MD5" = "$EXPECT_MD5" ]; then
-        log "INFO" "MD5校验通过：$ACTUAL_MD5"
-        return 0
-    else
-        log "ERROR" "MD5校验失败！期望：$EXPECT_MD5，实际：$ACTUAL_MD5"
-        return 1
-    fi
-}
-
-detect_disk() {
-    local DISK_LIST=("/dev/vda" "/dev/sda" "/dev/nvme0n1" "/dev/hda")
-    for disk in "${DISK_LIST[@]}"; do
-        if [ -b "$disk" ]; then
-            log "INFO" "检测到系统磁盘：$disk"
-            echo "$disk"
-            return 0
-        fi
-    done
-    err_exit "未检测到可用系统磁盘！"
-}
-
-# ---------------------- 短链接生成 ----------------------
 make_short_url() {
     clear
-    log "INFO" "========== 一键生成永久短链接（永不过期） =========="
-    log "INFO" "使用官方公益服务：ttm.sh | 永久有效、无广告、免登录"
+    log "INFO" "========== 一键生成永久短链接 =========="
     read -p "请输入需要缩短的长链接：" long_url
-    if [ -z "$long_url" ]; then
-        err_exit "链接不能为空！"
-    fi
-    log "INFO" "正在生成永久短链接..."
+    [ -z "$long_url" ] && err_exit "链接不能为空！"
     short_url=$(curl -sF "shorten=$long_url" http://ttm.sh)
     if [[ "$short_url" == http* ]]; then
         log "INFO" "✅ 永久短链接生成成功！"
@@ -116,7 +65,222 @@ make_short_url() {
     fi
 }
 
-# ---------------------- 初始化安装脚本自身 ----------------------
+# ===================== 网络安装核心函数 =====================
+get_interface() {
+    local iface=""
+    local Interfaces=$(cat /proc/net/dev | grep ':' | cut -d':' -f1 | sed 's/\s//g' | grep -iv '^lo\|^sit\|^stf\|^gif\|^dummy\|^vmnet\|^vir\|^gre\|^ipip\|^ppp\|^bond\|^tun\|^tap\|^ip6gre\|^ip6tnl\|^teql\|^ocserv\|^vpn')
+    local defaultRoute=$(ip route show default | grep "^default")
+    for item in $Interfaces; do
+        [ -n "$item" ] || continue
+        echo "$defaultRoute" | grep -q "$item"
+        [ $? -eq 0 ] && iface="$item" && break
+    done
+    echo "$iface"
+}
+
+netmask() {
+    n="${1:-32}"
+    b=""
+    m=""
+    for((i=0;i<32;i++)); do
+        [ $i -lt $n ] && b="${b}1" || b="${b}0"
+    done
+    for((i=0;i<4;i++)); do
+        s=$(echo "$b"|cut -c$[$[$i*8]+1]-$[$[$i+1]*8])
+        [ "$m" == "" ] && m="$((2#${s}))" || m="${m}.$((2#${s}))"
+    done
+    echo "$m"
+}
+
+get_ip_static() {
+    local iface=$(get_interface)
+    [ -z "$iface" ] && iface="eth0"
+    local iAddr=$(ip addr show dev "$iface" | grep "inet.*" | head -n1 | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\/[0-9]\{1,2\}')
+    echo "$iAddr" | grep '^10\.' | grep '/32$' >/dev/null && iAddr=$(echo "$iAddr" | sed 's/\/32/\/24/')
+    local ipAddr=$(echo ${iAddr} | cut -d'/' -f1)
+    local ipMask=$(netmask $(echo ${iAddr} | cut -d'/' -f2))
+    local ipGate=$(ip route show default | grep "^default" | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | head -n1)
+    echo "$ipAddr $ipMask $ipGate"
+}
+
+select_mirror() {
+    local distro="$1"
+    local distname="$2"
+    local arch="$3"
+    declare -A mirrors
+    case "$distro" in
+        debian)
+            mirrors=(["tuna"]="https://mirrors.tuna.tsinghua.edu.cn/debian" ["ustc"]="https://mirrors.ustc.edu.cn/debian" ["163"]="http://mirrors.163.com/debian")
+            path="dists/${distname}/main/installer-${arch}/current/images/netboot/debian-installer/${arch}/initrd.gz"
+            ;;
+        ubuntu)
+            mirrors=(["tuna"]="https://mirrors.tuna.tsinghua.edu.cn/ubuntu" ["ustc"]="https://mirrors.ustc.edu.cn/ubuntu" ["aliyun"]="http://mirrors.aliyun.com/ubuntu")
+            legacy=""; [ "$distname" = "focal" ] && legacy="legacy-"
+            path="dists/${distname}/main/installer-${arch}/current/${legacy}images/netboot/ubuntu-installer/${arch}/initrd.gz"
+            ;;
+        centos)
+            mirrors=(["tuna"]="https://mirrors.tuna.tsinghua.edu.cn/centos" ["ustc"]="https://mirrors.ustc.edu.cn/centos" ["aliyun"]="http://mirrors.aliyun.com/centos")
+            path="${distname}/os/${arch}/isolinux/initrd.img"
+            ;;
+        *) return 1 ;;
+    esac
+    for name in "${!mirrors[@]}"; do
+        base="${mirrors[$name]}"
+        url="$base/$path"
+        wget --no-check-certificate --spider --timeout=3 -q "$url" && echo "$base" && return 0
+    done
+    return 1
+}
+
+netinstall_linux() {
+    local os_type="$1"
+    local version_codename="$2"
+    local version_display="$3"
+    local root_pass="$4"
+    local ssh_port="$5"
+    local use_dhcp="$6"
+    local static_ip_info="$7"
+    local dns="$8"
+
+    local arch=$(uname -m)
+    case "$arch" in
+        x86_64|amd64) arch="amd64" ;;
+        i386|i686) arch="i386" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) err_exit "不支持的架构: $arch" ;;
+    esac
+
+    local ip_addr="" ip_mask="" ip_gate=""
+    if [ "$use_dhcp" = "y" ]; then
+        read ip_addr ip_mask ip_gate <<< $(get_ip_static)
+        [ -z "$ip_addr" ] && err_exit "无法获取当前IP，请手动指定静态IP"
+        log "INFO" "检测到当前IP: $ip_addr, 掩码: $ip_mask, 网关: $ip_gate，将使用DHCP模式"
+    else
+        read ip_addr ip_mask ip_gate <<< "$static_ip_info"
+        [ -z "$ip_addr" ] && err_exit "静态IP信息不全"
+    fi
+
+    log "INFO" "正在测试可用镜像源（$os_type $version_display）..."
+    local mirror=$(select_mirror "${os_type,,}" "$version_codename" "$arch")
+    if [ -z "$mirror" ]; then
+        err_exit "无法找到可用的镜像源，请检查网络或稍后重试"
+    fi
+    log "INFO" "使用镜像源: $mirror"
+
+    mkdir -p /tmp/netinstall
+    cd /tmp/netinstall || err_exit "无法进入临时目录"
+    log "INFO" "下载内核和初始化映像..."
+    if [ "$os_type" = "CentOS" ]; then
+        wget --no-check-certificate -q "$mirror/$version_codename/os/$arch/isolinux/vmlinuz" -O vmlinuz || err_exit "下载 vmlinuz 失败"
+        wget --no-check-certificate -q "$mirror/$version_codename/os/$arch/isolinux/initrd.img" -O initrd.img || err_exit "下载 initrd.img 失败"
+    else
+        local legacy=""; [ "$version_codename" = "focal" ] && legacy="legacy-"
+        if [ "$os_type" = "Ubuntu" ]; then
+            wget --no-check-certificate -q "$mirror/dists/$version_codename/main/installer-$arch/current/${legacy}images/netboot/ubuntu-installer/$arch/linux" -O vmlinuz || err_exit "下载 vmlinuz 失败"
+            wget --no-check-certificate -q "$mirror/dists/$version_codename/main/installer-$arch/current/${legacy}images/netboot/ubuntu-installer/$arch/initrd.gz" -O initrd.img || err_exit "下载 initrd.img 失败"
+        else
+            wget --no-check-certificate -q "$mirror/dists/$version_codename/main/installer-$arch/current/images/netboot/debian-installer/$arch/linux" -O vmlinuz || err_exit "下载 vmlinuz 失败"
+            wget --no-check-certificate -q "$mirror/dists/$version_codename/main/installer-$arch/current/images/netboot/debian-installer/$arch/initrd.gz" -O initrd.img || err_exit "下载 initrd.img 失败"
+        fi
+    fi
+
+    local crypt_pass=$(openssl passwd -1 "$root_pass")
+    local interface=$(get_interface)
+    [ -z "$interface" ] && interface="eth0"
+    local mirror_host=$(echo "$mirror" | awk -F'://' '{print $2}' | cut -d'/' -f1)
+    local mirror_path=$(echo "$mirror" | awk -F'://' '{print $2}' | cut -d'/' -f2-)
+    [ -z "$mirror_path" ] && mirror_path="/"
+
+    if [ "$os_type" = "CentOS" ]; then
+        cat > ks.cfg <<EOF
+install
+url --url="$mirror/$version_codename/os/$arch/"
+rootpw --iscrypted $crypt_pass
+text
+reboot
+lang en_US
+keyboard us
+timezone Asia/Shanghai
+network --bootproto=static --ip=$ip_addr --netmask=$ip_mask --gateway=$ip_gate --nameserver=$dns --device=$interface --onboot=on
+bootloader --location=mbr --driveorder=sda
+zerombr
+clearpart --all --initlabel
+autopart
+%packages
+@base
+%end
+EOF
+        gzip -d initrd.img
+        echo ks.cfg | cpio -o -H newc -A -F initrd.img 2>/dev/null
+        gzip initrd.img
+        boot_options="ks=file://ks.cfg"
+    else
+        cat > preseed.cfg <<EOF
+d-i debian-installer/locale string en_US.UTF-8
+d-i keyboard-configuration/xkb-keymap select us
+d-i netcfg/choose_interface select $interface
+d-i netcfg/disable_autoconfig boolean true
+d-i netcfg/dhcp_failed note
+d-i netcfg/dhcp_options select Configure network manually
+d-i netcfg/get_ipaddress string $ip_addr
+d-i netcfg/get_netmask string $ip_mask
+d-i netcfg/get_gateway string $ip_gate
+d-i netcfg/get_nameservers string $dns
+d-i netcfg/confirm_static boolean true
+d-i mirror/country string manual
+d-i mirror/http/hostname string $mirror_host
+d-i mirror/http/directory string $mirror_path
+d-i passwd/root-login boolean true
+d-i passwd/make-user boolean false
+d-i passwd/root-password-crypted password $crypt_pass
+d-i clock-setup/utc boolean true
+d-i time/zone string Asia/Shanghai
+d-i partman-auto/method string regular
+d-i partman-auto/choose_recipe select atomic
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i grub-installer/only_debian boolean true
+d-i grub-installer/bootdev string /dev/sda
+d-i finish-install/reboot_in_progress note
+d-i preseed/late_command string \
+    in-target sed -ri 's/^#?Port.*/Port ${ssh_port}/g' /etc/ssh/sshd_config; \
+    in-target sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config; \
+    in-target sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config;
+EOF
+        gzip -d initrd.img
+        echo preseed.cfg | cpio -o -H newc -A -F initrd.img 2>/dev/null
+        gzip initrd.img
+        boot_options="auto=true priority=critical preseed/file=/preseed.cfg"
+    fi
+
+    cp vmlinuz /boot/vmlinuz.netinstall
+    cp initrd.img /boot/initrd.img.netinstall
+    chmod 644 /boot/vmlinuz.netinstall /boot/initrd.img.netinstall
+
+    local grub_cfg=""
+    if [ -f /boot/grub/grub.cfg ]; then
+        grub_cfg="/boot/grub/grub.cfg"
+    elif [ -f /boot/grub2/grub.cfg ]; then
+        grub_cfg="/boot/grub2/grub.cfg"
+    else
+        err_exit "未找到 GRUB 配置文件"
+    fi
+
+    cat > /tmp/grub.new <<EOF
+menuentry "Network Install $os_type $version_display" {
+    linux /boot/vmlinuz.netinstall $boot_options
+    initrd /boot/initrd.img.netinstall
+}
+EOF
+    sed -i "/^menuentry /i $(cat /tmp/grub.new | sed 's/\//\\\//g')" "$grub_cfg"
+    log "INFO" "GRUB 启动项添加成功，系统将在重启后自动进入网络安装"
+    read -p "按回车键立即重启..."
+    reboot
+}
+
+# ---------------------- 初始化脚本自身 ----------------------
 if [ ! -f "$SCRIPT_PATH" ]; then
     cp "$0" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH" || err_exit "无法写入全局脚本"
     grep -q "alias y='$SCRIPT_PATH'" /etc/profile || echo "alias y='$SCRIPT_PATH'" >> /etc/profile
@@ -127,48 +291,44 @@ if [ ! -f "$SCRIPT_PATH" ]; then
 fi
 
 [ $EUID -ne 0 ] && err_exit "必须使用root用户执行！"
-mkdir -p "$CACHE_DIR" "$(dirname "$LOG_FILE")"
-chmod 700 "$CACHE_DIR"
+mkdir -p "$(dirname "$LOG_FILE")"
 
-# ---------------------- 主循环（菜单） ----------------------
+# ===================== 主菜单 =====================
 while true; do
     clear
-    log "INFO" "==================== 增强版全能DD脚本 ===================="
-    log "INFO" "功能：DD重装 | 面板 | 优化 | 测速 | 硬件 | 路由 | 系统管理 | Docker | 短链接"
-    log "WARN" "⚠️ 1-4选项为DD重装，会清空服务器全盘数据！请谨慎操作！"
+    log "INFO" "==================== 全能网络安装脚本 ===================="
+    log "INFO" "功能：网络安装 | 面板 | 优化 | 测速 | 硬件 | 路由 | 系统管理 | Docker | 短链接"
+    log "WARN" "⚠️ 1-3选项为网络自动安装（会清空磁盘），请谨慎操作！"
     echo ""
-    echo "==================== 全能功能主菜单 ===================="
-    echo "【1】Ubuntu 全系列版本 DD重装"
-    echo "【2】Debian 全系列版本 DD重装"
-    echo "【3】CentOS 全系列版本 DD重装"
-    echo "【4】自定义国内RAW镜像 DD重装"
+    echo "==================== 主菜单 ===================="
+    echo "【1】Ubuntu 网络自动安装"
+    echo "【2】Debian 网络自动安装"
+    echo "【3】CentOS 网络自动安装"
     echo ""
-    echo "【5】一键安装/修复/清理 宝塔面板"
-    echo "【6】一键安装/修复/清理 1Panel面板"
-    echo "【7】服务器一键性能网络安全优化"
-    echo "【8】一键全网测速脚本（稳定版，结果导出）"
-    echo "【9】一键查看服务器硬件完整配置（导出报告）"
-    echo "【10】一键三网回程路由追踪测试（可视化）"
+    echo "【4】一键安装/修复/清理 宝塔面板"
+    echo "【5】一键安装/修复/清理 1Panel面板"
+    echo "【6】服务器一键性能网络安全优化"
+    echo "【7】一键全网测速脚本（稳定版，结果导出）"
+    echo "【8】一键查看服务器硬件完整配置（导出报告）"
+    echo "【9】一键三网回程路由追踪测试（可视化）"
     echo ""
-    echo "【11】镜像缓存管理（查看/清理）"
-    echo "【12】查看DD操作日志"
-    echo ""
-    echo "【13】系统信息查询（完整硬件检测）"
-    echo "【14】系统一键更新（内核+软件包）"
-    echo "【15】系统安全清理（释放空间）"
-    echo "【16】安装基础必备工具"
-    echo "【17】Docker 一站式管理（安装/卸载/更新/容器）"
-    echo "【18】一键生成永久短链接（永不过期）"
-    echo "【19】退出脚本"
-    read -p "请输入功能序号（1-19）：" main_opt
+    echo "【10】查看操作日志"
+    echo "【11】系统信息查询（完整硬件检测）"
+    echo "【12】系统一键更新（内核+软件包）"
+    echo "【13】系统安全清理（释放空间）"
+    echo "【14】安装基础必备工具"
+    echo "【15】Docker 一站式管理（安装/卸载/更新/容器）"
+    echo "【16】一键生成永久短链接（永不过期）"
+    echo "【17】退出脚本"
+    read -p "请输入功能序号（1-17）：" main_opt
 
     case $main_opt in
-        18)
+        16)
             make_short_url
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        5)
+        4)
             clear
             log "INFO" "==================== 宝塔面板管理 ===================="
             echo "【1】安装 / 修复 宝塔面板"
@@ -177,14 +337,14 @@ while true; do
             case $bt_opt in
                 1)
                     log "INFO" "开始安装/修复宝塔面板..."
-                    smart_install wget || smart_install curl
+                    smart_install wget curl
                     wget -O install.sh https://download.bt.cn/install/install_lts.sh
                     chmod +x install.sh
                     bash install.sh --repair
                     log "INFO" "宝塔面板安装/修复完成！"
                     ;;
                 2)
-                    log "WARN" "⚠️  即将彻底卸载宝塔面板，所有网站/数据库将被删除！"
+                    log "WARN" "⚠️ 即将彻底卸载宝塔面板，所有数据将被删除！"
                     read -p "确定继续？(y/n)：" bt_confirm
                     if [ "$bt_confirm" = "y" ]; then
                         wget -O uninstall.sh https://download.bt.cn/install/uninstall.sh
@@ -201,7 +361,7 @@ while true; do
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        6)
+        5)
             clear
             log "INFO" "==================== 1Panel 面板管理 ===================="
             echo "【1】安装 / 升级 1Panel 面板"
@@ -210,7 +370,7 @@ while true; do
             case $op_opt in
                 1)
                     log "INFO" "开始安装/升级1Panel..."
-                    smart_install wget || smart_install curl
+                    smart_install wget curl
                     if [ -f "/usr/local/1panel/1panel" ]; then
                         curl -sSL https://resource.1panel.hk/update.sh | bash
                     else
@@ -219,7 +379,7 @@ while true; do
                     log "INFO" "1Panel 操作完成！"
                     ;;
                 2)
-                    log "WARN" "⚠️  即将彻底卸载1Panel，所有数据将被删除！"
+                    log "WARN" "⚠️ 即将彻底卸载1Panel，所有数据将被删除！"
                     read -p "确定继续？(y/n)：" op_confirm
                     if [ "$op_confirm" = "y" ]; then
                         systemctl stop 1panel
@@ -235,7 +395,7 @@ while true; do
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        7)
+        6)
             log "INFO" "执行增强版服务器优化..."
             timedatectl set-timezone Asia/Shanghai && log "INFO" "时区已同步为上海"
             cat > /etc/security/limits.d/99-custom.conf << EOF
@@ -269,9 +429,9 @@ EOF
             sed -i 's/^#PermitRootLogin.*/PermitRootLogin prohibit-password/g' /etc/ssh/sshd_config
             sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication no/g' /etc/ssh/sshd_config
             systemctl restart sshd 2>/dev/null || service ssh restart && log "INFO" "SSH安全配置已更新"
-            setenforce 0 >/dev/null 2>&1
-            sed -i 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
-            systemctl disable firewalld >/dev/null 2>&1 || ufw disable >/dev/null 2>&1
+            setenforce 0 >/dev/null 2>&1 || true
+            sed -i 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config 2>/dev/null || true
+            systemctl disable firewalld >/dev/null 2>&1 || ufw disable >/dev/null 2>&1 || true
             log "INFO" "安全策略已优化"
             echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
             echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
@@ -283,61 +443,45 @@ EOF
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        8)
-            log "INFO" "运行稳定版全网测速脚本（yabs.sh）..."
+        7)
+            log "INFO" "运行稳定版全网测速脚本..."
             smart_install wget curl bc
             curl -sL yabs.sh | bash -s -- -5 -9 | tee /root/speedtest_result.txt
             log "INFO" "测速完成！结果已导出至 /root/speedtest_result.txt"
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        9)
+        8)
             log "INFO" "生成服务器硬件配置报告..."
             REPORT_FILE="/root/server_hardware_$(date +%Y%m%d).txt"
             echo "========== 服务器硬件配置报告 $(date) ==========" > "$REPORT_FILE"
-            echo -e "\n【CPU信息】" >> "$REPORT_FILE"; lscpu >> "$REPORT_FILE"
+            echo -e "\n【CPU信息】" >> "$REPORT_FILE"; lscpu >> "$REPORT_FILE" 2>/dev/null
             echo -e "\n【内存信息】" >> "$REPORT_FILE"; free -h >> "$REPORT_FILE"
-            echo -e "\n【磁盘信息】" >> "$REPORT_FILE"; lsblk >> "$REPORT_FILE"; df -h >> "$REPORT_FILE"
-            echo -e "\n【网卡&IP信息】" >> "$REPORT_FILE"; ip addr >> "$REPORT_FILE"
+            echo -e "\n【磁盘信息】" >> "$REPORT_FILE"; lsblk >> "$REPORT_FILE" 2>/dev/null; df -h >> "$REPORT_FILE"
+            echo -e "\n【网卡&IP信息】" >> "$REPORT_FILE"; ip addr >> "$REPORT_FILE" 2>/dev/null
             echo -e "\n【系统版本】" >> "$REPORT_FILE"; cat /etc/os-release >> "$REPORT_FILE"
-            echo -e "\n【虚拟化架构】" >> "$REPORT_FILE"; virt-what >> "$REPORT_FILE" 2>/dev/null
             log "INFO" "✅ 硬件配置报告已生成：$REPORT_FILE"
             cat "$REPORT_FILE"
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        10)
-            log "INFO" "运行三网回程路由测试（可视化）..."
+        9)
+            log "INFO" "运行三网回程路由测试..."
             smart_install wget curl mtr traceroute
             bash <(curl -sSL https://raw.githubusercontent.com/lidabruce/backhaul/master/backhaul.sh) -v
             log "INFO" "三网回程测试完成！"
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        11)
-            log "INFO" "镜像缓存管理菜单"
-            echo "【1】查看缓存列表"
-            echo "【2】清理指定缓存"
-            echo "【3】清空所有缓存"
-            read -p "请选择操作：" cache_opt
-            case $cache_opt in
-                1) ls -lh "$CACHE_DIR"; du -sh "$CACHE_DIR" ;;
-                2) read -p "请输入要清理的缓存文件名：" cache_file; [ -f "$CACHE_DIR/$cache_file" ] && rm -f "$CACHE_DIR/$cache_file" && log "INFO" "已清理" || log "ERROR" "文件不存在" ;;
-                3) read -p "确认清空所有缓存？(y/n)：" confirm; [ "$confirm" = "y" ] && rm -rf "$CACHE_DIR"/* && log "INFO" "已清空所有缓存" ;;
-                *) log "ERROR" "无效选项！" ;;
-            esac
-            read -p "按回车键返回主菜单..."
-            continue
-            ;;
-        12)
-            log "INFO" "查看DD操作日志（最后100行）"
+        10)
+            log "INFO" "查看操作日志（最后100行）"
             tail -n 100 "$LOG_FILE"
             read -p "是否查看完整日志？(y/n)：" view_all
             [ "$view_all" = "y" ] && less "$LOG_FILE"
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        13)
+        11)
             clear
             log "INFO" "========== 系统完整信息查询 =========="
             echo "【1】系统基础信息 【2】CPU信息 【3】内存信息"
@@ -349,14 +493,14 @@ EOF
                 3) free -h; swapon --show ;;
                 4) lsblk; df -h --total ;;
                 5) ip -br addr; echo -n "公网IPv4："; curl -s 4.ipw.cn; echo ;;
-                6) virt-what; dmidecode -s system-manufacturer 2>/dev/null ;;
+                6) virt-what 2>/dev/null; dmidecode -s system-manufacturer 2>/dev/null ;;
                 7) REPORT="/root/sysinfo_$(date +%Y%m%d).log"; echo "===== 系统完整报告 =====" > "$REPORT"; cat /etc/os-release >> "$REPORT"; lscpu >> "$REPORT"; free -h >> "$REPORT"; lsblk >> "$REPORT"; ip addr >> "$REPORT"; log "INFO" "报告已生成：$REPORT" ;;
                 *) log "ERROR" "无效选项" ;;
             esac
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        14)
+        12)
             log "INFO" "开始系统一键更新..."
             if command -v apt &>/dev/null; then
                 apt update -y && apt upgrade -y && apt dist-upgrade -y && apt autoremove -y --purge
@@ -369,7 +513,7 @@ EOF
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        15)
+        13)
             log "INFO" "开始系统安全清理..."
             if command -v apt &>/dev/null; then
                 apt clean all && apt autoremove -y --purge
@@ -383,7 +527,7 @@ EOF
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        16)
+        14)
             log "INFO" "安装系统必备基础工具..."
             if command -v apt &>/dev/null; then
                 apt update -y && apt install -y wget curl vim zip unzip tar make gcc git socat net-tools dnsutils htop iotop iftop mtr traceroute virt-what dmidecode bc
@@ -394,7 +538,7 @@ EOF
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        17)
+        15)
             clear
             log "INFO" "========== Docker 一站式管理 =========="
             echo "【1】安装 Docker（linuxmirrors 官方脚本）"
@@ -409,7 +553,7 @@ EOF
                     docker -v
                     ;;
                 2)
-                    log "WARN" "⚠️  即将彻底卸载 Docker，所有镜像/容器/数据将全部删除！"
+                    log "WARN" "⚠️ 即将彻底卸载 Docker，所有镜像/容器/数据将全部删除！"
                     read -p "确定继续？(y/n)：" docker_confirm
                     if [ "$docker_confirm" = "y" ]; then
                         systemctl stop docker
@@ -451,154 +595,117 @@ EOF
             read -p "按回车键返回主菜单..."
             continue
             ;;
-        19)
+        17)
             log "INFO" "感谢使用，再见！"
             exit 0
             ;;
-        1|2|3|4)
-            # ---------- DD 重装核心代码（Ubuntu/Debian/CentOS/自定义）----------
-            img_url=""
-            sysname=""
-            img_md5=""
-            # Ubuntu 版本选择
-            if [ "$main_opt" -eq 1 ]; then
-                echo -e "\n--- Ubuntu 全版本（国内镜像）---"
-                echo "1)14.04 2)16.04 3)18.04 4)20.04 5)22.04 6)24.04 7)26.04 8)26.10"
-                read -p "选择Ubuntu版本：" ubt_opt
-                case $ubt_opt in
-                    1) img_url="https://mirrors.aliyun.com/dd-images/ubuntu1404.raw"; sysname="Ubuntu14.04"; img_md5="5f1b9f8d7c6b5a4e3f2d1c0b9a8e7d6c" ;;
-                    2) img_url="https://mirrors.aliyun.com/dd-images/ubuntu1604.raw"; sysname="Ubuntu16.04"; img_md5="8d3e7c9b6a5f4d3c2b1a0f9e8d7c6b5a" ;;
-                    3) img_url="https://mirrors.tuna.tsinghua.edu.cn/dd/ubuntu1804.raw"; sysname="Ubuntu18.04"; img_md5="a7b9c8d7e6f5e4d3c2b1a0f9e8d7c6b5" ;;
-                    4) img_url="https://mirrors.cloud.tencent.com/dd/ubuntu2004.raw"; sysname="Ubuntu20.04"; img_md5="2f4d6b8a0c7e9f8d7c6b5a4e3f2d1c0" ;;
-                    5) img_url="https://mirrors.aliyun.com/dd-images/ubuntu2204.raw"; sysname="Ubuntu22.04"; img_md5="9c8b7a6d5f4e3d2c1b0a9f8e7d6c5b4" ;;
-                    6) img_url="https://mirrors.tuna.tsinghua.edu.cn/dd/ubuntu2404.raw"; sysname="Ubuntu24.04"; img_md5="5d2f7a9c4b6e8f7d6c5b4a3e2f1d0c9" ;;
-                    7) img_url="https://cdn.jsdelivr.net/gh/ddmirror-cn/raw/ubuntu2604.raw"; sysname="Ubuntu26.04"; img_md5="3b6d9f2a7c5e8f7d6c5b4a3e2f1d0c9" ;;
-                    8) img_url="https://cdn.jsdelivr.net/gh/ddmirror-cn/raw/ubuntu2610.raw"; sysname="Ubuntu26.10"; img_md5="7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2" ;;
-                    *) err_exit "版本选择错误！" ;;
-                esac
-            fi
-            # Debian 版本选择
-            if [ "$main_opt" -eq 2 ]; then
-                echo -e "\n--- Debian 全版本 ---"
-                echo "1)8 2)9 3)10 4)11 5)12 6)13 7)13.4 8)13.5"
-                read -p "选择Debian版本：" deb_opt
-                case $deb_opt in
-                    1) img_url="https://mirrors.163.com/dd/debian8.raw"; sysname="Debian8"; img_md5="7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d2" ;;
-                    2) img_url="https://mirrors.aliyun.com/dd-images/debian9.raw"; sysname="Debian9"; img_md5="4d5f6g7h8j9k0a1s2d3f4g5h6j7k8l9" ;;
-                    3) img_url="https://mirrors.tuna.tsinghua.edu.cn/dd/debian10.raw"; sysname="Debian10"; img_md5="a9b8c7d6e5f4g3h2j1k0l9m8n7b6v5" ;;
-                    4) img_url="https://mirrors.cloud.tencent.com/dd/debian11.raw"; sysname="Debian11"; img_md5="2s3d4f5g6h7j8k9l0m1n2b3v4c5x6z7" ;;
-                    5) img_url="https://mirrors.aliyun.com/dd-images/debian12.raw"; sysname="Debian12"; img_md5="6f7g8h9j0k1l2m3n4b5v6c7x8z9a0s1" ;;
-                    6) img_url="https://cdn.jsdelivr.net/gh/ddmirror-cn/raw/debian13.raw"; sysname="Debian13"; img_md5="8a7b6c5d4e3f2g1h0j9k8l7m6n5b4v3" ;;
-                    7) img_url="https://cdn.jsdelivr.net/gh/ddmirror-cn/raw/debian134.raw"; sysname="Debian13.4"; img_md5="1q2w3e4r5t6y7u8i9o0p1a2s3d4f5g6" ;;
-                    8) img_url="https://cdn.jsdelivr.net/gh/ddmirror-cn/raw/debian135.raw"; sysname="Debian13.5"; img_md5="9z8x7c6v5b4n3m2l1k0j9h8g7f6d5s4a3" ;;
-                    *) err_exit "版本选择错误！" ;;
-                esac
-            fi
-            # CentOS 版本选择
-            if [ "$main_opt" -eq 3 ]; then
-                echo -e "\n--- CentOS 全版本 ---"
-                echo "1)6 2)7 3)8 4)Stream9 5)Stream10"
-                read -p "选择CentOS版本：" cen_opt
-                case $cen_opt in
-                    1) img_url="https://mirrors.aliyun.com/dd-images/centos6.raw"; sysname="CentOS6"; img_md5="3d2f1g0h9j8k7l6m5n4b3v2c1x0z9" ;;
-                    2) img_url="https://mirrors.tuna.tsinghua.edu.cn/dd/centos7.raw"; sysname="CentOS7"; img_md5="9j8k7l6m5n4b3v2c1x0z9a8s7d6f5" ;;
-                    3) img_url="https://mirrors.cloud.tencent.com/dd/centos8.raw"; sysname="CentOS8"; img_md5="5s4d3f2g1h0j9k8l7m6n5b4v3c2x1z0" ;;
-                    4) img_url="https://mirrors.aliyun.com/dd-images/centoss9.raw"; sysname="CentOSStream9"; img_md5="7a6s5d4f3g2h1j0k9l8m7n6b5v4c3x2" ;;
-                    5) img_url="https://cdn.jsdelivr.net/gh/ddmirror-cn/raw/centoss10.raw"; sysname="CentOSStream10"; img_md5="8s7d6f5g4h3j2k1l0m9n8b7v6c5x4z3" ;;
-                    *) err_exit "版本选择错误！" ;;
-                esac
-            fi
-            # 自定义镜像
-            if [ "$main_opt" -eq 4 ]; then
-                read -p "请输入自定义国内RAW镜像地址：" img_url
-                sysname="自定义国内镜像"
-                read -p "是否输入MD5值进行校验？(y/n)：" custom_md5
-                if [ "$custom_md5" = "y" ]; then
-                    read -p "请输入镜像MD5值：" img_md5
-                else
-                    img_md5=""
-                    log "WARN" "自定义镜像未配置MD5校验，风险自负！"
-                fi
-            fi
-
-            # 密码设置
-            echo -e "\n--- 系统密码设置 ---"
-            log "INFO" "默认密码：$DEFAULT_PASS"
-            read -p "是否修改密码？(y/n)：" change_pass
-            if [ "$change_pass" = "y" ] || [ "$change_pass" = "Y" ]; then
-                while true; do
-                    read -p "请输入新密码（至少8位，含字母+数字）：" new_pass
-                    if [ ${#new_pass} -lt 8 ]; then
-                        log "WARN" "密码长度不能少于8位！"
-                    elif ! [[ "$new_pass" =~ [a-zA-Z] && "$new_pass" =~ [0-9] ]]; then
-                        log "WARN" "密码必须包含字母和数字！"
-                    else
-                        DEFAULT_PASS=$new_pass
-                        break
-                    fi
-                done
-            fi
-
-            echo -e "\n================================================================"
-            log "WARN" "即将DD重装系统：$sysname | 密码：$DEFAULT_PASS"
-            log "WARN" "操作将清空磁盘数据，无法恢复！"
-            read -p "确认执行请输入 YES（大写），任意键取消：" confirm
-            [ "$confirm" != "YES" ] && err_exit "已取消重装操作"
-
-            DISK=$(detect_disk)
-            IMG_FILENAME=$(basename "$img_url")
-            CACHE_FILE="$CACHE_DIR/$IMG_FILENAME"
-            USE_CACHE=0
-
-            if [ -n "$img_md5" ] && [ -f "$CACHE_FILE" ]; then
-                log "INFO" "检测到缓存文件，校验MD5..."
-                if check_md5 "$CACHE_FILE" "$img_md5"; then
-                    log "INFO" "缓存有效，直接使用！"
-                    USE_CACHE=1
-                else
-                    log "WARN" "缓存失效，重新下载..."
-                    rm -f "$CACHE_FILE"
-                fi
-            fi
-
-            if [ $USE_CACHE -eq 1 ]; then
-                log "INFO" "从缓存写入磁盘：$DISK"
-                dd if="$CACHE_FILE" of="$DISK" bs=$BLOCK_SIZE status=progress conv=fsync
-            else
-                if [ -n "$img_md5" ]; then
-                    download_with_retry "$img_url" "$CACHE_FILE" || err_exit "下载失败"
-                    check_md5 "$CACHE_FILE" "$img_md5" || (rm -f "$CACHE_FILE"; err_exit "MD5校验失败")
-                    dd if="$CACHE_FILE" of="$DISK" bs=$BLOCK_SIZE status=progress conv=fsync
-                else
-                    log "INFO" "直写模式，开始写入..."
-                    wget --no-check-certificate -qO- "$img_url" | dd of="$DISK" bs=$BLOCK_SIZE status=progress conv=fsync
-                    [ $? -ne 0 ] && err_exit "直写模式写入失败！"
-                fi
-            fi
-
-            # 为 Linux 系统写入 root 密码
-            if [[ $main_opt -le 3 ]]; then
-                log "INFO" "写入root密码..."
-                for PART in "${DISK}1" "${DISK}2" "${DISK}p1"; do
-                    if mount "$PART" /mnt >/dev/null 2>&1; then
-                        echo "root:$DEFAULT_PASS" | chroot /mnt chpasswd
-                        umount /mnt >/dev/null 2>&1
-                        log "INFO" "密码已写入分区：$PART"
-                        break
-                    fi
-                done
-            fi
-
-            log "INFO" "✅ $sysname 系统DD重装完成！"
-            log "INFO" "Linux登录：root / $DEFAULT_PASS"
-            log "INFO" "服务器将重启，请等待5-10分钟后登录！"
-            read -p "按回车键立即重启..."
-            reboot
+        1)
+            # Ubuntu 网络安装
+            echo "请选择 Ubuntu 版本："
+            echo "1) 20.04 (Focal Fossa)"
+            echo "2) 22.04 (Jammy Jellyfish)"
+            echo "3) 24.04 (Noble Numbat)"
+            echo "4) 26.04 (Plucky Puffin) [LTS]"
+            read -p "请输入序号（1-4）：" ub_ver
+            case $ub_ver in
+                1) CODENAME="focal"; DISPLAY="20.04" ;;
+                2) CODENAME="jammy"; DISPLAY="22.04" ;;
+                3) CODENAME="noble"; DISPLAY="24.04" ;;
+                4) CODENAME="plucky"; DISPLAY="26.04" ;;
+                *) err_exit "无效选择" ;;
+            esac
+            OS_TYPE="Ubuntu"
+            VERSION_CODENAME="$CODENAME"
+            VERSION_DISPLAY="$DISPLAY"
+            ;;
+        2)
+            # Debian 网络安装
+            echo "请选择 Debian 版本："
+            echo "1) Debian 10 (Buster)"
+            echo "2) Debian 11 (Bullseye)"
+            echo "3) Debian 12 (Bookworm)"
+            echo "4) Debian 13 (Trixie)"
+            read -p "请输入序号（1-4）：" db_ver
+            case $db_ver in
+                1) CODENAME="buster"; DISPLAY="10" ;;
+                2) CODENAME="bullseye"; DISPLAY="11" ;;
+                3) CODENAME="bookworm"; DISPLAY="12" ;;
+                4) CODENAME="trixie"; DISPLAY="13" ;;
+                *) err_exit "无效选择" ;;
+            esac
+            OS_TYPE="Debian"
+            VERSION_CODENAME="$CODENAME"
+            VERSION_DISPLAY="$DISPLAY"
+            ;;
+        3)
+            # CentOS 网络安装
+            echo "请选择 CentOS 版本："
+            echo "1) CentOS 7"
+            echo "2) CentOS 8"
+            echo "3) CentOS 9 Stream"
+            read -p "请输入序号（1-3）：" cs_ver
+            case $cs_ver in
+                1) CODENAME="7.9.2009"; DISPLAY="7" ;;
+                2) CODENAME="8.5.2111"; DISPLAY="8" ;;
+                3) CODENAME="9-stream"; DISPLAY="9-stream" ;;
+                *) err_exit "无效选择" ;;
+            esac
+            OS_TYPE="CentOS"
+            VERSION_CODENAME="$CODENAME"
+            VERSION_DISPLAY="$DISPLAY"
             ;;
         *)
-            log "ERROR" "无效的功能序号！请输入1-19"
+            log "ERROR" "无效的功能序号！请输入1-17"
             read -p "按回车键返回主菜单..."
             continue
             ;;
     esac
+
+    # 对于 1-3 选项，继续执行网络安装流程
+    if [[ "$main_opt" -eq 1 || "$main_opt" -eq 2 || "$main_opt" -eq 3 ]]; then
+        # 密码设置
+        echo -e "\n--- 系统密码设置 ---"
+        log "INFO" "默认密码：$DEFAULT_PASS"
+        read -p "是否修改密码？(y/n)：" change_pass
+        if [[ "$change_pass" =~ ^[Yy]$ ]]; then
+            while true; do
+                read -p "请输入新密码（至少8位，含字母+数字）：" new_pass
+                if [ ${#new_pass} -lt 8 ]; then
+                    log "WARN" "密码长度不能少于8位！"
+                elif ! [[ "$new_pass" =~ [a-zA-Z] && "$new_pass" =~ [0-9] ]]; then
+                    log "WARN" "密码必须包含字母和数字！"
+                else
+                    DEFAULT_PASS=$new_pass
+                    break
+                fi
+            done
+        fi
+
+        read -p "请输入 SSH 端口（默认22）：" ssh_port
+        [ -z "$ssh_port" ] && ssh_port="22"
+
+        echo "--- 网络配置 ---"
+        read -p "使用 DHCP 自动获取 IP？(y/n, 默认 y): " use_dhcp
+        use_dhcp=${use_dhcp:-y}
+        static_info=""
+        dns="8.8.8.8"
+        if [[ "$use_dhcp" =~ ^[Nn]$ ]]; then
+            read -p "请输入 IP 地址：" ip_addr
+            read -p "请输入子网掩码（例如 255.255.255.0）：" ip_mask
+            read -p "请输入网关地址：" ip_gate
+            read -p "请输入 DNS 服务器（默认 8.8.8.8）：" dns_input
+            [ -n "$dns_input" ] && dns="$dns_input"
+            static_info="$ip_addr $ip_mask $ip_gate"
+        else
+            read -p "请输入 DNS 服务器（默认 8.8.8.8）：" dns_input
+            [ -n "$dns_input" ] && dns="$dns_input"
+        fi
+
+        log "INFO" "即将执行网络安装：$OS_TYPE $VERSION_DISPLAY，密码已设置，SSH端口 $ssh_port"
+        read -p "确认继续？(y/n)：" confirm
+        [[ ! "$confirm" =~ ^[Yy]$ ]] && err_exit "已取消安装"
+
+        netinstall_linux "$OS_TYPE" "$VERSION_CODENAME" "$VERSION_DISPLAY" "$DEFAULT_PASS" "$ssh_port" "$use_dhcp" "$static_info" "$dns"
+        # 函数内会重启，不会返回
+    fi
 done
