@@ -591,16 +591,116 @@ panel_1panel_menu() {
 }
 
 #====================================================
-# Docker 一站式管理
+# Docker 一站式管理子菜单
 #====================================================
-docker_management() {
-    _info "正在启动 Docker 一站式管理脚本..."
-    if ! command_exists curl && ! command_exists wget; then
-        _error "需要 curl 或 wget 来下载脚本，请先安装"
+docker_install() {
+    _info "开始安装 Docker..."
+    if command -v docker &>/dev/null; then
+        _warn "Docker 已安装，如需重装请先卸载"
+        return
     fi
-    bash <(curl -sSL https://linuxmirrors.cn/docker.sh)
-    echo -e "${cyan}Docker 管理脚本执行完毕，按 Enter 返回主菜单${plain}"
-    read -r
+    curl -fsSL https://get.docker.com | bash
+    if [ $? -eq 0 ]; then
+        systemctl enable docker && systemctl start docker
+        _info "Docker 安装成功"
+    else
+        _error "Docker 安装失败"
+    fi
+}
+
+docker_uninstall() {
+    _warn "即将卸载 Docker (保留容器数据，如需完全删除请手动删除 /var/lib/docker)"
+    echo -e "${cyan}确认继续? (y/N)${plain}"
+    read -r confirm
+    [[ ! "$confirm" =~ [Yy] ]] && _info "操作取消" && return
+    if command -v apt &>/dev/null; then
+        apt purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    elif command -v yum &>/dev/null; then
+        yum remove -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    else
+        _error "不支持的系统"
+    fi
+    rm -rf /var/lib/docker /var/lib/containerd
+    _info "Docker 已卸载"
+}
+
+docker_update() {
+    _info "开始更新 Docker..."
+    if ! command -v docker &>/dev/null; then
+        _warn "Docker 未安装，将执行安装"
+        docker_install
+        return
+    fi
+    curl -fsSL https://get.docker.com | bash
+    _info "Docker 已更新到最新版"
+    systemctl restart docker
+}
+
+container_menu() {
+    while true; do
+        clear
+        echo -e "${cyan}========== 容器管理 ==========${plain}"
+        echo -e "${green}1) 查看所有容器${plain}"
+        echo -e "${green}2) 启动容器${plain}"
+        echo -e "${green}3) 停止容器${plain}"
+        echo -e "${green}4) 重启容器${plain}"
+        echo -e "${green}5) 删除容器${plain}"
+        echo -e "${green}0) 返回上级菜单${plain}"
+        read -r opt
+        case $opt in
+            1)
+                echo -e "${cyan}当前所有容器（含已停止）：${plain}"
+                docker ps -a
+                echo -e "${cyan}按 Enter 继续${plain}"
+                read -r
+                ;;
+            2)
+                read -r -p "请输入要启动的容器名称或ID: " cid
+                docker start "$cid" && _info "容器 $cid 已启动" || _warn "启动失败"
+                read -r -p "按 Enter 继续" 
+                ;;
+            3)
+                read -r -p "请输入要停止的容器名称或ID: " cid
+                docker stop "$cid" && _info "容器 $cid 已停止" || _warn "停止失败"
+                read -r -p "按 Enter 继续"
+                ;;
+            4)
+                read -r -p "请输入要重启的容器名称或ID: " cid
+                docker restart "$cid" && _info "容器 $cid 已重启" || _warn "重启失败"
+                read -r -p "按 Enter 继续"
+                ;;
+            5)
+                read -r -p "请输入要删除的容器名称或ID: " cid
+                docker rm "$cid" && _info "容器 $cid 已删除" || _warn "删除失败"
+                read -r -p "按 Enter 继续"
+                ;;
+            0) return ;;
+            *) _warn "无效输入" ;;
+        esac
+    done
+}
+
+docker_menu() {
+    while true; do
+        clear
+        echo -e "${cyan}========== Docker 一站式管理 ==========${plain}"
+        echo -e "${green}1) 安装 Docker${plain}"
+        echo -e "${green}2) 卸载 Docker${plain}"
+        echo -e "${green}3) 更新 Docker${plain}"
+        echo -e "${green}4) 容器管理${plain}"
+        echo -e "${green}0) 返回主菜单${plain}"
+        read -r opt
+        case $opt in
+            1) docker_install ;;
+            2) docker_uninstall ;;
+            3) docker_update ;;
+            4) container_menu ;;
+            0) return ;;
+            *) _warn "无效输入" ;;
+        esac
+        echo -e "${cyan}按 Enter 返回 Docker 菜单${plain}"
+        read -r
+    done
 }
 
 #====================================================
@@ -665,7 +765,7 @@ main() {
             3) menu_centos ;;
             4) panel_bt_menu ;;
             5) panel_1panel_menu ;;
-            6) docker_management ;;
+            6) docker_menu ;;
             00) update_script ;;
             0) _info "已退出脚本"; exit 0 ;;
             y|Y) 
