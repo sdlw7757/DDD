@@ -923,6 +923,7 @@ show_main_menu() {
     echo -e "${bold}${green}【7】${plain} 系统信息查询"
     echo -e "${bold}${green}【8】${plain} 系统更新（自动国内源，含 Git）"
     echo -e "${bold}${green}【9】${plain} 系统清理"
+	echo -e "${bold}${green}【10】${plain} 基础工具"
     echo ""
     echo -e " ------------------------"
     echo -e "  ${bold}${yellow}00.${plain}  脚本更新"
