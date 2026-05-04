@@ -8,7 +8,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# 颜色定义（加粗使用 \033[1m）
+# 颜色定义
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -44,7 +44,6 @@ DD_URL=""
 LinuxMirror=""
 myPASSWORD=""
 
-# 脚本自身路径
 SCRIPT_PATH=$(realpath "$0")
 
 #====================================================
@@ -616,7 +615,7 @@ docker_install() {
     _need_root
     _info "开始安装 Docker..."
     if command -v docker &>/dev/null; then
-        _warn "Docker 已安装，如需重装请先卸载"
+        _warn "Docker 已安装，如需重装请先执行清理"
         return
     fi
     curl -fsSL https://get.docker.com | bash
@@ -751,7 +750,7 @@ system_info() {
     echo -e "${green}CPU 型号:${plain} $CPU_MODEL"
     echo -e "${green}CPU 核心数:${plain} $(nproc)"
     
-    # 内存信息（使用 /proc/meminfo 确保可靠）
+    # 内存信息
     mem_total_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
     mem_available_kb=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
     if [ -n "$mem_total_kb" ] && [ -n "$mem_available_kb" ]; then
@@ -763,7 +762,6 @@ system_info() {
         echo -e "${green}已用内存:${plain} ${mem_used_gb}G"
         echo -e "${green}可用内存:${plain} ${mem_avail_gb}G"
     else
-        # 降级使用 free -h
         MEM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
         MEM_USED=$(free -h | awk '/^Mem:/ {print $3}')
         MEM_AVAIL=$(free -h | awk '/^Mem:/ {print $4}')
@@ -788,13 +786,12 @@ system_info() {
 }
 
 #====================================================
-# 系统更新（需要 root，自动国内源）
+# 系统更新（需要 root）
 #====================================================
 system_update() {
     _need_root
     _info "开始系统更新 (将优先使用国内镜像源)..."
     
-    # 备份并更换国内源
     if command -v apt &>/dev/null; then
         if [ ! -f /etc/apt/sources.list.bak ]; then
             cp /etc/apt/sources.list /etc/apt/sources.list.bak
@@ -877,20 +874,14 @@ system_clean() {
 }
 
 #====================================================
-# 基础工具子菜单（部分需要 root）
+# 基础工具子菜单
 #====================================================
 install_common_tools() {
     _need_root
-    _info "安装常用工具 (curl, wget, git, vim, htop, net-tools, etc.)"
-    if command -v apt &>/dev/null; then
-        apt update
-        apt install -y curl wget git vim htop net-tools iperf3 ncdu unzip zip
-    elif command -v yum &>/dev/null; then
-        yum install -y curl wget git vim htop net-tools iperf3 ncdu unzip zip
-    else
-        _error "不支持的包管理器"
-    fi
-    _info "常用工具安装完成"
+    _info "安装常用工具 (curl, wget, git, vim, socat, htop, net-tools, etc.)"
+    # 执行用户指定的命令，并扩展安装更多工具
+    apt update -y && apt install -y curl socat wget git vim htop net-tools iperf3 ncdu unzip zip
+    _info "基础工具安装完成"
 }
 
 network_test() {
@@ -924,7 +915,7 @@ basic_tools_menu() {
     while true; do
         clear
         echo -e "${cyan}========== 基础工具 ==========${plain}"
-        echo -e "${green}1) 安装常用工具 (curl, git, vim 等)${plain}"
+        echo -e "${green}1) 安装常用工具 (curl, wget, git, vim, socat, htop, net-tools)${plain}"
         echo -e "${green}2) 网络测试 (ping)${plain}"
         echo -e "${green}3) 端口扫描 (nc)${plain}"
         echo -e "${green}4) 查看磁盘使用情况${plain}"
@@ -944,7 +935,7 @@ basic_tools_menu() {
 }
 
 #====================================================
-# 脚本更新（增强版，无需 root 但需下载权限）
+# 脚本更新（增强版）
 #====================================================
 update_script() {
     _info "正在检查脚本更新..."
@@ -982,7 +973,7 @@ update_script() {
 }
 
 #====================================================
-# 主菜单（加粗、增大文字）
+# 主菜单
 #====================================================
 show_main_menu() {
     clear
@@ -1011,10 +1002,9 @@ show_main_menu() {
 }
 
 #====================================================
-# 主程序（非 root 也可启动菜单，需要 root 的操作会提示）
+# 主程序
 #====================================================
 main() {
-    # 不再强制要求 root，只在具体功能中检查
     VER=$(get_arch)
     [ -z "$VER" ] && _error "不支持的 CPU 架构"
     check_depends
