@@ -8,13 +8,14 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# 颜色定义
+# 颜色定义（加粗使用 \033[1m）
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
 blue='\033[0;34m'
 magenta='\033[0;35m'
 cyan='\033[0;36m'
+bold='\033[1m'
 plain='\033[0m'
 
 # 默认配置
@@ -704,6 +705,77 @@ docker_menu() {
 }
 
 #====================================================
+# 系统信息查询
+#====================================================
+system_info() {
+    clear
+    echo -e "${bold}${cyan}========== 系统信息 ==========${plain}"
+    echo -e "${green}主机名:${plain} $(hostname)"
+    echo -e "${green}系统版本:${plain} $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
+    echo -e "${green}内核版本:${plain} $(uname -r)"
+    echo -e "${green}架构:${plain} $(uname -m)"
+    echo -e "${green}CPU 型号:${plain} $(lscpu | grep "Model name" | cut -d':' -f2 | xargs)"
+    echo -e "${green}CPU 核心数:${plain} $(nproc)"
+    echo -e "${green}内存总大小:${plain} $(free -h | awk '/^Mem:/ {print $2}')"
+    echo -e "${green}已用内存:${plain} $(free -h | awk '/^Mem:/ {print $3}')"
+    echo -e "${green}可用内存:${plain} $(free -h | awk '/^Mem:/ {print $4}')"
+    echo -e "${green}硬盘使用情况:${plain}"
+    df -h | grep -E '^/dev/'
+    echo -e "${green}系统负载:${plain} $(uptime | awk -F'load average:' '{print $2}')"
+    echo -e "${green}当前用户:${plain} $(whoami)"
+    echo -e "${green}已登录用户:${plain}"
+    who
+    echo -e "${cyan}按 Enter 返回主菜单${plain}"
+    read -r
+}
+
+#====================================================
+# 系统更新（含安装 Git）
+#====================================================
+system_update() {
+    _info "开始系统更新..."
+    if command -v apt &>/dev/null; then
+        apt update && apt upgrade -y
+        _info "正在安装/更新 Git..."
+        apt install -y git
+    elif command -v yum &>/dev/null; then
+        yum update -y
+        _info "正在安装/更新 Git..."
+        yum install -y git
+    else
+        _error "不支持的系统包管理器"
+    fi
+    _info "系统更新及 Git 安装完成"
+    echo -e "${cyan}按 Enter 返回主菜单${plain}"
+    read -r
+}
+
+#====================================================
+# 系统清理（安全清理）
+#====================================================
+system_clean() {
+    _warn "即将执行系统清理（清理包缓存、旧日志、/tmp 临时文件）"
+    echo -e "${cyan}确认继续? (y/N)${plain}"
+    read -r confirm
+    [[ ! "$confirm" =~ [Yy] ]] && _info "操作取消" && return
+    if command -v apt &>/dev/null; then
+        apt autoremove -y
+        apt autoclean
+        apt clean
+    elif command -v yum &>/dev/null; then
+        yum autoremove -y
+        yum clean all
+    fi
+    # 清理日志文件（保留最近3天）
+    find /var/log -type f -name "*.log" -mtime +3 -exec truncate -s 0 {} \; 2>/dev/null
+    # 清理 /tmp 下超过3天的文件
+    find /tmp -type f -atime +3 -delete 2>/dev/null
+    _info "系统清理完成"
+    echo -e "${cyan}按 Enter 返回主菜单${plain}"
+    read -r
+}
+
+#====================================================
 # 脚本更新（使用 GitHub 地址）
 #====================================================
 update_script() {
@@ -726,26 +798,31 @@ update_script() {
 }
 
 #====================================================
-# 主菜单（含 y 键快速启动提示）
+# 主菜单（加粗、增加新功能）
 #====================================================
 show_main_menu() {
     clear
-    echo -e "${cyan}============================================================${plain}"
-    echo -e "${cyan}==================== 全功能DD脚本主菜单 ====================${plain}"
-    echo -e "${cyan}============================================================${plain}"
-    echo -e "${green}【1】Ubuntu 全系列版本 DD重装${plain}"
-    echo -e "${green}【2】Debian 全系列版本 DD重装${plain}"
-    echo -e "${green}【3】CentOS 全系列版本 DD重装${plain}"
-    echo -e "${green}【4】一键安装/修复/清理 宝塔面板${plain}"
-    echo -e "${green}【5】一键安装/修复/清理 1Panel面板${plain}"
-    echo -e "${green}【6】Docker 一站式管理（安装/卸载/更新/容器）${plain}"
+    echo -e "${bold}${cyan}============================================================${plain}"
+    echo -e "${bold}${cyan}==================== 全功能DD脚本主菜单 ====================${plain}"
+    echo -e "${bold}${cyan}============================================================${plain}"
+    echo ""
+    echo -e "${bold}${green}【1】${plain} Ubuntu 全系列版本 DD重装"
+    echo -e "${bold}${green}【2】${plain} Debian 全系列版本 DD重装"
+    echo -e "${bold}${green}【3】${plain} CentOS 全系列版本 DD重装"
+    echo -e "${bold}${green}【4】${plain} 一键安装/修复/清理 宝塔面板"
+    echo -e "${bold}${green}【5】${plain} 一键安装/修复/清理 1Panel面板"
+    echo -e "${bold}${green}【6】${plain} Docker 一站式管理（安装/卸载/更新/容器）"
+    echo -e "${bold}${green}【7】${plain} 系统信息查询"
+    echo -e "${bold}${green}【8】${plain} 系统更新（含 Git 安装）"
+    echo -e "${bold}${green}【9】${plain} 系统清理"
+    echo ""
     echo -e " ------------------------"
-    echo -e "  ${yellow}00.${plain}  脚本更新"
+    echo -e "  ${bold}${yellow}00.${plain}  脚本更新"
     echo -e " ------------------------"
-    echo -e "  ${yellow}0.${plain}   退出脚本"
+    echo -e "  ${bold}${yellow}0.${plain}   退出脚本"
     echo -e " ---------------------------------------------------------------"
-    echo -e " ${green}提示：命令行输入 y 可快速启动本脚本${plain}"
-    echo -e "${cyan}============================================================${plain}"
+    echo -e " ${bold}${green}提示：在菜单中按 y 可快速重启本脚本（刷新菜单）${plain}"
+    echo -e "${bold}${cyan}============================================================${plain}"
 }
 
 #====================================================
@@ -767,6 +844,9 @@ main() {
             4) panel_bt_menu ;;
             5) panel_1panel_menu ;;
             6) docker_menu ;;
+            7) system_info ;;
+            8) system_update ;;
+            9) system_clean ;;
             00) update_script ;;
             0) _info "已退出脚本"; exit 0 ;;
             y|Y) 
