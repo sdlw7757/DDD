@@ -1,7 +1,7 @@
 #!/bin/bash
 #====================================================
 # 全功能DD脚本 - 支持Ubuntu/Debian/CentOS全系列重装
-# 支持宝塔面板 / 1Panel 面板 / Docker 一站式管理
+# 支持宝塔面板 / 1Panel 面板 / Docker 一站式管理 / 基础工具
 # 默认root密码: 123456 (可修改)
 # 脚本更新地址: https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh
 #====================================================
@@ -53,6 +53,11 @@ SCRIPT_PATH=$(realpath "$0")
 _info() { echo -e "${green}[INFO]${plain} $1"; }
 _warn() { echo -e "${yellow}[WARN]${plain} $1"; }
 _error() { echo -e "${red}[ERROR]${plain} $1"; exit 1; }
+_need_root() {
+    if [[ $EUID -ne 0 ]]; then
+        _error "此操作需要 root 权限，请使用 sudo 运行脚本或切换到 root 用户"
+    fi
+}
 
 command_exists() { command -v "$1" &>/dev/null; }
 
@@ -185,9 +190,10 @@ set_install_options() {
 }
 
 #====================================================
-# DD 安装核心
+# DD 安装核心（需要 root）
 #====================================================
 prepare_install_files() {
+    _need_root
     local os_lower=$(echo "$SELECTED_OS" | tr '[:upper:]' '[:lower:]')
     local mirror=""
     local dist="$SELECTED_VERSION"
@@ -215,6 +221,7 @@ prepare_install_files() {
 }
 
 generate_preseed_cfg() {
+    _need_root
     local os_lower=$(echo "$SELECTED_OS" | tr '[:upper:]' '[:lower:]')
     local mirror_host=$(echo "$LinuxMirror" | awk -F'://|/' '{print $2}')
     local mirror_dir=$(echo "$LinuxMirror" | awk -F"$mirror_host" '{print $2}')
@@ -285,6 +292,7 @@ EOF
 }
 
 generate_ks_cfg() {
+    _need_root
     local disk=$(get_disk)
     [ -z "$disk" ] && _error "未找到磁盘设备"
     local ip_line=""
@@ -323,6 +331,7 @@ EOF
 }
 
 pack_initrd() {
+    _need_root
     _info "打包 initrd.img ..."
     mkdir -p /tmp/initrd_unpack
     cd /tmp/initrd_unpack
@@ -349,6 +358,7 @@ pack_initrd() {
 }
 
 start_installation() {
+    _need_root
     cp -f /tmp/vmlinuz /boot/vmlinuz_install
     cp -f /tmp/initrd.img /boot/initrd.img_install
     local grub_info=$(get_grub "/boot")
@@ -385,6 +395,7 @@ start_installation() {
 }
 
 install_os() {
+    _need_root
     myPASSWORD=$(openssl passwd -1 "$ROOT_PASS")
     [ -z "$SELECTED_OS" ] || [ -z "$SELECTED_VERSION" ] || [ -z "$SELECTED_ARCH" ] && _error "请先选择操作系统和版本"
     prepare_install_files
@@ -427,12 +438,13 @@ menu_ubuntu() {
 
 menu_debian() {
     echo -e "${cyan}请选择 Debian 版本:${plain}"
-    echo "1) Debian 11 (bullseye)  2) Debian 10 (buster)  3) Debian 12 (bookworm)  0) 返回主菜单"
+    echo "1) Debian 11 (bullseye)  2) Debian 10 (buster)  3) Debian 12 (bookworm)  4) Debian 13 (trixie)  0) 返回主菜单"
     read -r opt
     case $opt in
         1) SELECTED_VERSION="bullseye" ;;
         2) SELECTED_VERSION="buster" ;;
         3) SELECTED_VERSION="bookworm" ;;
+        4) SELECTED_VERSION="trixie" ;;
         0) return ;;
         *) SELECTED_VERSION="bullseye" ;;
     esac
@@ -473,9 +485,10 @@ menu_centos() {
 }
 
 #====================================================
-# 面板管理函数
+# 面板管理函数（需要 root）
 #====================================================
 install_bt() {
+    _need_root
     _info "开始安装宝塔面板 (官方脚本)..."
     if command_exists bt; then
         _warn "宝塔面板已安装，如需重装请先执行清理"
@@ -490,6 +503,7 @@ install_bt() {
 }
 
 repair_bt() {
+    _need_root
     _info "尝试修复宝塔面板..."
     if command_exists bt; then
         bt 16
@@ -501,6 +515,7 @@ repair_bt() {
 }
 
 clean_bt() {
+    _need_root
     _warn "即将卸载宝塔面板并清理所有数据 (不可恢复)"
     echo -e "${cyan}确认继续? (y/N)${plain}"
     read -r confirm
@@ -520,6 +535,7 @@ clean_bt() {
 }
 
 install_1panel() {
+    _need_root
     _info "开始安装 1Panel 面板..."
     if command_exists 1panel; then
         _warn "1Panel 已安装，如需重装请先执行清理"
@@ -529,6 +545,7 @@ install_1panel() {
 }
 
 repair_1panel() {
+    _need_root
     _info "尝试修复 1Panel..."
     if command_exists 1panel; then
         1panel update
@@ -539,6 +556,7 @@ repair_1panel() {
 }
 
 clean_1panel() {
+    _need_root
     _warn "即将卸载 1Panel (数据不可恢复)"
     echo -e "${cyan}确认继续? (y/N)${plain}"
     read -r confirm
@@ -592,9 +610,10 @@ panel_1panel_menu() {
 }
 
 #====================================================
-# Docker 一站式管理子菜单
+# Docker 一站式管理子菜单（需要 root）
 #====================================================
 docker_install() {
+    _need_root
     _info "开始安装 Docker..."
     if command -v docker &>/dev/null; then
         _warn "Docker 已安装，如需重装请先卸载"
@@ -610,6 +629,7 @@ docker_install() {
 }
 
 docker_uninstall() {
+    _need_root
     _warn "即将卸载 Docker (保留容器数据，如需完全删除请手动删除 /var/lib/docker)"
     echo -e "${cyan}确认继续? (y/N)${plain}"
     read -r confirm
@@ -626,6 +646,7 @@ docker_uninstall() {
 }
 
 docker_update() {
+    _need_root
     _info "开始更新 Docker..."
     if ! command -v docker &>/dev/null; then
         _warn "Docker 未安装，将执行安装"
@@ -638,6 +659,7 @@ docker_update() {
 }
 
 container_menu() {
+    _need_root
     while true; do
         clear
         echo -e "${cyan}========== 容器管理 ==========${plain}"
@@ -705,7 +727,7 @@ docker_menu() {
 }
 
 #====================================================
-# 系统信息查询（修复内存检测）
+# 系统信息查询（无需 root）
 #====================================================
 system_info() {
     clear
@@ -766,19 +788,18 @@ system_info() {
 }
 
 #====================================================
-# 系统更新（自动优先使用国内源，含 Git 安装）
+# 系统更新（需要 root，自动国内源）
 #====================================================
 system_update() {
+    _need_root
     _info "开始系统更新 (将优先使用国内镜像源)..."
     
     # 备份并更换国内源
     if command -v apt &>/dev/null; then
-        # Debian / Ubuntu
         if [ ! -f /etc/apt/sources.list.bak ]; then
             cp /etc/apt/sources.list /etc/apt/sources.list.bak
             _info "已备份原软件源到 /etc/apt/sources.list.bak"
         fi
-        # 获取发行版名称和代号
         if grep -qi "ubuntu" /etc/os-release; then
             CODENAME=$(lsb_release -sc 2>/dev/null)
             if [ -n "$CODENAME" ]; then
@@ -789,11 +810,8 @@ deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-backports main restri
 deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-security main restricted universe multiverse
 EOF
                 _info "已更换为清华源 (Ubuntu $CODENAME)"
-            else
-                _warn "无法获取 Ubuntu 版本代号，跳过换源"
             fi
         else
-            # Debian
             CODENAME=$(lsb_release -sc 2>/dev/null)
             if [ -n "$CODENAME" ]; then
                 cat > /etc/apt/sources.list <<EOF
@@ -802,8 +820,6 @@ deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME-updates main contrib 
 deb https://mirrors.tuna.tsinghua.edu.cn/debian-security $CODENAME-security main contrib non-free non-free-firmware
 EOF
                 _info "已更换为清华源 (Debian $CODENAME)"
-            else
-                _warn "无法获取 Debian 版本代号，跳过换源"
             fi
         fi
         apt update
@@ -811,11 +827,9 @@ EOF
         _info "正在安装/更新 Git..."
         apt install -y git
     elif command -v yum &>/dev/null; then
-        # CentOS / RHEL
         if grep -qi "release 7" /etc/centos-release 2>/dev/null; then
             if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
                 cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
-                _info "已备份原 yum 源"
             fi
             curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
             _info "已更换为阿里云 CentOS 7 源"
@@ -825,8 +839,6 @@ EOF
             fi
             curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-8.repo
             _info "已更换为阿里云 CentOS 8 源"
-        else
-            _warn "不支持的 CentOS 版本，跳过换源"
         fi
         yum makecache
         yum update -y
@@ -841,9 +853,10 @@ EOF
 }
 
 #====================================================
-# 系统清理（安全清理）
+# 系统清理（需要 root）
 #====================================================
 system_clean() {
+    _need_root
     _warn "即将执行系统清理（清理包缓存、旧日志、/tmp 临时文件）"
     echo -e "${cyan}确认继续? (y/N)${plain}"
     read -r confirm
@@ -856,9 +869,7 @@ system_clean() {
         yum autoremove -y
         yum clean all
     fi
-    # 清理日志文件（保留最近3天）
     find /var/log -type f -name "*.log" -mtime +3 -exec truncate -s 0 {} \; 2>/dev/null
-    # 清理 /tmp 下超过3天的文件
     find /tmp -type f -atime +3 -delete 2>/dev/null
     _info "系统清理完成"
     echo -e "${cyan}按 Enter 返回主菜单${plain}"
@@ -866,7 +877,74 @@ system_clean() {
 }
 
 #====================================================
-# 脚本更新（增强版：多源重试，自动重启，修复换行符）
+# 基础工具子菜单（部分需要 root）
+#====================================================
+install_common_tools() {
+    _need_root
+    _info "安装常用工具 (curl, wget, git, vim, htop, net-tools, etc.)"
+    if command -v apt &>/dev/null; then
+        apt update
+        apt install -y curl wget git vim htop net-tools iperf3 ncdu unzip zip
+    elif command -v yum &>/dev/null; then
+        yum install -y curl wget git vim htop net-tools iperf3 ncdu unzip zip
+    else
+        _error "不支持的包管理器"
+    fi
+    _info "常用工具安装完成"
+}
+
+network_test() {
+    echo -e "${cyan}请输入要 ping 的目标地址 (默认 google.com):${plain}"
+    read -r target
+    target=${target:-google.com}
+    ping -c 4 "$target"
+    echo -e "${cyan}按 Enter 继续${plain}"
+    read -r
+}
+
+port_scan() {
+    read -r -p "请输入要扫描的 IP 或域名: " ip
+    read -r -p "请输入端口范围 (例如 1-1000): " range
+    _info "扫描 $ip 端口 $range ..."
+    nc -zv "$ip" $(echo $range | tr '-' ' ') 2>&1 | grep succeeded
+    echo -e "${cyan}按 Enter 继续${plain}"
+    read -r
+}
+
+disk_usage() {
+    echo -e "${green}磁盘使用情况:${plain}"
+    df -h
+    echo -e "${green}当前目录大小:${plain}"
+    du -sh . 2>/dev/null || echo "无法获取"
+    echo -e "${cyan}按 Enter 继续${plain}"
+    read -r
+}
+
+basic_tools_menu() {
+    while true; do
+        clear
+        echo -e "${cyan}========== 基础工具 ==========${plain}"
+        echo -e "${green}1) 安装常用工具 (curl, git, vim 等)${plain}"
+        echo -e "${green}2) 网络测试 (ping)${plain}"
+        echo -e "${green}3) 端口扫描 (nc)${plain}"
+        echo -e "${green}4) 查看磁盘使用情况${plain}"
+        echo -e "${green}0) 返回主菜单${plain}"
+        read -r opt
+        case $opt in
+            1) install_common_tools ;;
+            2) network_test ;;
+            3) port_scan ;;
+            4) disk_usage ;;
+            0) return ;;
+            *) _warn "无效输入" ;;
+        esac
+        echo -e "${cyan}按 Enter 返回工具菜单${plain}"
+        read -r
+    done
+}
+
+#====================================================
+# 脚本更新（增强版，无需 root 但需下载权限）
 #====================================================
 update_script() {
     _info "正在检查脚本更新..."
@@ -879,9 +957,7 @@ update_script() {
     for url in "${remote_urls[@]}"; do
         _info "尝试从 $url 下载..."
         if wget --no-check-certificate -qO "$tmp_path" "$url" || curl -k -o "$tmp_path" "$url"; then
-            # 修复 Windows 换行符
             sed -i 's/\r$//' "$tmp_path"
-            # 验证是否为有效的 shell 脚本
             if head -1 "$tmp_path" | grep -q "#!/bin/bash"; then
                 cp "$tmp_path" "$SCRIPT_PATH"
                 chmod +x "$SCRIPT_PATH"
@@ -923,7 +999,7 @@ show_main_menu() {
     echo -e "${bold}${green}【7】${plain} 系统信息查询"
     echo -e "${bold}${green}【8】${plain} 系统更新（自动国内源，含 Git）"
     echo -e "${bold}${green}【9】${plain} 系统清理"
-	echo -e "${bold}${green}【10】${plain} 基础工具"
+    echo -e "${bold}${green}【10】${plain} 基础工具"
     echo ""
     echo -e " ------------------------"
     echo -e "  ${bold}${yellow}00.${plain}  脚本更新"
@@ -935,10 +1011,10 @@ show_main_menu() {
 }
 
 #====================================================
-# 主程序
+# 主程序（非 root 也可启动菜单，需要 root 的操作会提示）
 #====================================================
 main() {
-    [ "$EUID" -ne 0 ] && _error "请以 root 权限运行此脚本"
+    # 不再强制要求 root，只在具体功能中检查
     VER=$(get_arch)
     [ -z "$VER" ] && _error "不支持的 CPU 架构"
     check_depends
@@ -956,6 +1032,7 @@ main() {
             7) system_info ;;
             8) system_update ;;
             9) system_clean ;;
+            10) basic_tools_menu ;;
             00) update_script ;;
             0) _info "已退出脚本"; exit 0 ;;
             y|Y) 
