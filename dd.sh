@@ -705,7 +705,7 @@ docker_menu() {
 }
 
 #====================================================
-# 系统信息查询（修复CPU和内存显示）
+# 系统信息查询（修复内存检测）
 #====================================================
 system_info() {
     clear
@@ -715,7 +715,7 @@ system_info() {
     echo -e "${green}内核版本:${plain} $(uname -r)"
     echo -e "${green}架构:${plain} $(uname -m)"
     
-    # 获取 CPU 型号（兼容多种方式）
+    # CPU 型号
     CPU_MODEL=$(cat /proc/cpuinfo | grep "model name" | head -1 | cut -d':' -f2 | xargs)
     if [ -z "$CPU_MODEL" ]; then
         CPU_MODEL=$(lscpu | grep "Model name" | cut -d':' -f2 | xargs)
@@ -727,25 +727,33 @@ system_info() {
         CPU_MODEL="未知"
     fi
     echo -e "${green}CPU 型号:${plain} $CPU_MODEL"
-    
     echo -e "${green}CPU 核心数:${plain} $(nproc)"
     
-    # 获取内存信息（兼容 free 输出格式）
-    MEM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
-    if [ -z "$MEM_TOTAL" ]; then
-        MEM_TOTAL=$(free -h | awk '/^Mem/ {print $2}')
+    # 内存信息（使用 /proc/meminfo 确保可靠）
+    mem_total_kb=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    mem_available_kb=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+    if [ -n "$mem_total_kb" ] && [ -n "$mem_available_kb" ]; then
+        mem_total_gb=$(echo "scale=2; $mem_total_kb/1024/1024" | bc)
+        mem_used_kb=$((mem_total_kb - mem_available_kb))
+        mem_used_gb=$(echo "scale=2; $mem_used_kb/1024/1024" | bc)
+        mem_avail_gb=$(echo "scale=2; $mem_available_kb/1024/1024" | bc)
+        echo -e "${green}内存总大小:${plain} ${mem_total_gb}G"
+        echo -e "${green}已用内存:${plain} ${mem_used_gb}G"
+        echo -e "${green}可用内存:${plain} ${mem_avail_gb}G"
+    else
+        # 降级使用 free -h
+        MEM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
+        MEM_USED=$(free -h | awk '/^Mem:/ {print $3}')
+        MEM_AVAIL=$(free -h | awk '/^Mem:/ {print $4}')
+        if [ -z "$MEM_TOTAL" ]; then
+            MEM_TOTAL=$(free -h | awk '/^Mem/ {print $2}')
+            MEM_USED=$(free -h | awk '/^Mem/ {print $3}')
+            MEM_AVAIL=$(free -h | awk '/^Mem/ {print $4}')
+        fi
+        echo -e "${green}内存总大小:${plain} ${MEM_TOTAL:-未知}"
+        echo -e "${green}已用内存:${plain} ${MEM_USED:-未知}"
+        echo -e "${green}可用内存:${plain} ${MEM_AVAIL:-未知}"
     fi
-    MEM_USED=$(free -h | awk '/^Mem:/ {print $3}')
-    if [ -z "$MEM_USED" ]; then
-        MEM_USED=$(free -h | awk '/^Mem/ {print $3}')
-    fi
-    MEM_AVAIL=$(free -h | awk '/^Mem:/ {print $4}')
-    if [ -z "$MEM_AVAIL" ]; then
-        MEM_AVAIL=$(free -h | awk '/^Mem/ {print $4}')
-    fi
-    echo -e "${green}内存总大小:${plain} ${MEM_TOTAL:-未知}"
-    echo -e "${green}已用内存:${plain} ${MEM_USED:-未知}"
-    echo -e "${green}可用内存:${plain} ${MEM_AVAIL:-未知}"
     
     echo -e "${green}硬盘使用情况:${plain}"
     df -h | grep -E '^/dev/'
@@ -897,6 +905,7 @@ show_main_menu() {
     echo -e "${bold}${green}【7】${plain} 系统信息查询"
     echo -e "${bold}${green}【8】${plain} 系统更新（自动国内源，含 Git）"
     echo -e "${bold}${green}【9】${plain} 系统清理"
+    echo -e "${bold}${green}【9】${plain} 基础工具"
     echo ""
     echo -e " ------------------------"
     echo -e "  ${bold}${yellow}00.${plain}  脚本更新"
