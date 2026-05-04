@@ -8,7 +8,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# 颜色定义
+# 颜色定义（加粗使用 \033[1m）
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
@@ -44,6 +44,7 @@ DD_URL=""
 LinuxMirror=""
 myPASSWORD=""
 
+# 脚本自身路径
 SCRIPT_PATH=$(realpath "$0")
 
 #====================================================
@@ -827,6 +828,7 @@ EOF
         if grep -qi "release 7" /etc/centos-release 2>/dev/null; then
             if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
                 cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+                _info "已备份原 yum 源"
             fi
             curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
             _info "已更换为阿里云 CentOS 7 源"
@@ -879,7 +881,6 @@ system_clean() {
 install_common_tools() {
     _need_root
     _info "安装常用工具 (curl, wget, git, vim, socat, htop, net-tools, etc.)"
-    # 执行用户指定的命令，并扩展安装更多工具
     apt update -y && apt install -y curl socat wget git vim htop net-tools iperf3 ncdu unzip zip
     _info "基础工具安装完成"
 }
@@ -973,7 +974,7 @@ update_script() {
 }
 
 #====================================================
-# 主菜单
+# 主菜单（排版对齐）
 #====================================================
 show_main_menu() {
     clear
@@ -981,21 +982,22 @@ show_main_menu() {
     echo -e "${bold}${cyan}==================== 全功能DD脚本主菜单 ====================${plain}"
     echo -e "${bold}${cyan}============================================================${plain}"
     echo ""
-    echo -e "${bold}${green}【1】${plain} Ubuntu 全系列版本 DD重装"
-    echo -e "${bold}${green}【2】${plain} Debian 全系列版本 DD重装"
-    echo -e "${bold}${green}【3】${plain} CentOS 全系列版本 DD重装"
-    echo -e "${bold}${green}【4】${plain} 一键安装/修复/清理 宝塔面板"
-    echo -e "${bold}${green}【5】${plain} 一键安装/修复/清理 1Panel面板"
-    echo -e "${bold}${green}【6】${plain} Docker 一站式管理（安装/卸载/更新/容器）"
-    echo -e "${bold}${green}【7】${plain} 系统信息查询"
-    echo -e "${bold}${green}【8】${plain} 系统更新（自动国内源，含 Git）"
-    echo -e "${bold}${green}【9】${plain} 系统清理"
-    echo -e "${bold}${green}【10】${plain} 基础工具"
+    # 使用 printf 实现序号右对齐（宽度3），确保选项文字从同一列开始
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[1]" "Ubuntu 全系列版本 DD重装"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[2]" "Debian 全系列版本 DD重装"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[3]" "CentOS 全系列版本 DD重装"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[4]" "一键安装/修复/清理 宝塔面板"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[5]" "一键安装/修复/清理 1Panel面板"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[6]" "Docker 一站式管理（安装/卸载/更新/容器）"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[7]" "系统信息查询"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[8]" "系统更新（自动国内源，含 Git）"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[9]" "系统清理"
+    printf " ${bold}${green}%3s${plain} ${plain}%s\n" "[10]" "基础工具"
     echo ""
     echo -e " ------------------------"
-    echo -e "  ${bold}${yellow}00.${plain}  脚本更新"
+    printf "  ${bold}${yellow}%3s${plain}   %s\n" "00" "脚本更新"
     echo -e " ------------------------"
-    echo -e "  ${bold}${yellow}0.${plain}   退出脚本"
+    printf "  ${bold}${yellow}%3s${plain}   %s\n" "0" "退出脚本"
     echo -e " ---------------------------------------------------------------"
     echo -e " ${bold}${green}提示：在菜单中按 y 可快速重启本脚本（刷新菜单）${plain}"
     echo -e "${bold}${cyan}============================================================${plain}"
