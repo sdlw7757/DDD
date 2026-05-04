@@ -129,7 +129,7 @@ select_mirror() {
 }
 
 check_depends() {
-    local deps="wget,awk,grep,sed,cut,cat,lsblk,cpio,gzip,find,dirname,basename,openssl,file"
+    local deps="wget,awk,grep,sed,cut,cat,lsblk,cpio,gzip,find,dirname,basename,openssl,file,curl"
     _info "检查依赖工具..."
     for bin in $(echo "$deps" | tr ',' '\n'); do
         if ! command_exists "$bin"; then
@@ -866,23 +866,41 @@ system_clean() {
 }
 
 #====================================================
-# 脚本更新（使用 GitHub 地址）
+# 脚本更新（增强版：多源重试，自动重启，修复换行符）
 #====================================================
 update_script() {
     _info "正在检查脚本更新..."
     local tmp_path="/tmp/dd_install_new.sh"
-    local remote_url="https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh"
-    if wget --no-check-certificate -qO "$tmp_path" "$remote_url"; then
-        sed -i 's/\r$//' "$tmp_path"
-        cp "$tmp_path" "$SCRIPT_PATH"
-        chmod +x "$SCRIPT_PATH"
-        _info "脚本已更新，请重新运行"
-        exit 0
+    local remote_urls=(
+        "https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh"
+        "https://raw.gitmirror.com/sdlw7757/dd-script/main/dd.sh"
+        "https://ghproxy.net/https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh"
+    )
+    for url in "${remote_urls[@]}"; do
+        _info "尝试从 $url 下载..."
+        if wget --no-check-certificate -qO "$tmp_path" "$url" || curl -k -o "$tmp_path" "$url"; then
+            # 修复 Windows 换行符
+            sed -i 's/\r$//' "$tmp_path"
+            # 验证是否为有效的 shell 脚本
+            if head -1 "$tmp_path" | grep -q "#!/bin/bash"; then
+                cp "$tmp_path" "$SCRIPT_PATH"
+                chmod +x "$SCRIPT_PATH"
+                _info "脚本已更新，正在自动重启..."
+                sleep 1
+                exec "$SCRIPT_PATH" "$@"
+            else
+                _warn "下载的文件无效，尝试下一源"
+                continue
+            fi
+        fi
+    done
+    _warn "所有更新源均失败，请检查网络或手动更新"
+    _warn "手动更新命令: wget -O $SCRIPT_PATH https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh && sed -i 's/\\r\$//' $SCRIPT_PATH"
+    echo -e "${cyan}按 r 重试，按 Enter 返回主菜单${plain}"
+    read -r retry_opt
+    if [[ "$retry_opt" == "r" || "$retry_opt" == "R" ]]; then
+        update_script "$@"
     else
-        _warn "检查更新失败，请检查网络或手动从 GitHub 下载最新脚本"
-        _warn "手动更新命令: wget -O $SCRIPT_PATH $remote_url && sed -i 's/\\r\$//' $SCRIPT_PATH"
-        echo -e "${cyan}按 Enter 返回主菜单${plain}"
-        read -r
         return 1
     fi
 }
@@ -905,7 +923,6 @@ show_main_menu() {
     echo -e "${bold}${green}【7】${plain} 系统信息查询"
     echo -e "${bold}${green}【8】${plain} 系统更新（自动国内源，含 Git）"
     echo -e "${bold}${green}【9】${plain} 系统清理"
-    echo -e "${bold}${green}【9】${plain} 基础工具"
     echo ""
     echo -e " ------------------------"
     echo -e "  ${bold}${yellow}00.${plain}  脚本更新"
