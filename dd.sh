@@ -705,7 +705,7 @@ docker_menu() {
 }
 
 #====================================================
-# 系统信息查询
+# 系统信息查询（修复CPU和内存显示）
 #====================================================
 system_info() {
     clear
@@ -714,11 +714,39 @@ system_info() {
     echo -e "${green}系统版本:${plain} $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
     echo -e "${green}内核版本:${plain} $(uname -r)"
     echo -e "${green}架构:${plain} $(uname -m)"
-    echo -e "${green}CPU 型号:${plain} $(lscpu | grep "Model name" | cut -d':' -f2 | xargs)"
+    
+    # 获取 CPU 型号（兼容多种方式）
+    CPU_MODEL=$(cat /proc/cpuinfo | grep "model name" | head -1 | cut -d':' -f2 | xargs)
+    if [ -z "$CPU_MODEL" ]; then
+        CPU_MODEL=$(lscpu | grep "Model name" | cut -d':' -f2 | xargs)
+    fi
+    if [ -z "$CPU_MODEL" ]; then
+        CPU_MODEL=$(lscpu | grep "CPU name" | cut -d':' -f2 | xargs)
+    fi
+    if [ -z "$CPU_MODEL" ]; then
+        CPU_MODEL="未知"
+    fi
+    echo -e "${green}CPU 型号:${plain} $CPU_MODEL"
+    
     echo -e "${green}CPU 核心数:${plain} $(nproc)"
-    echo -e "${green}内存总大小:${plain} $(free -h | awk '/^Mem:/ {print $2}')"
-    echo -e "${green}已用内存:${plain} $(free -h | awk '/^Mem:/ {print $3}')"
-    echo -e "${green}可用内存:${plain} $(free -h | awk '/^Mem:/ {print $4}')"
+    
+    # 获取内存信息（兼容 free 输出格式）
+    MEM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
+    if [ -z "$MEM_TOTAL" ]; then
+        MEM_TOTAL=$(free -h | awk '/^Mem/ {print $2}')
+    fi
+    MEM_USED=$(free -h | awk '/^Mem:/ {print $3}')
+    if [ -z "$MEM_USED" ]; then
+        MEM_USED=$(free -h | awk '/^Mem/ {print $3}')
+    fi
+    MEM_AVAIL=$(free -h | awk '/^Mem:/ {print $4}')
+    if [ -z "$MEM_AVAIL" ]; then
+        MEM_AVAIL=$(free -h | awk '/^Mem/ {print $4}')
+    fi
+    echo -e "${green}内存总大小:${plain} ${MEM_TOTAL:-未知}"
+    echo -e "${green}已用内存:${plain} ${MEM_USED:-未知}"
+    echo -e "${green}可用内存:${plain} ${MEM_AVAIL:-未知}"
+    
     echo -e "${green}硬盘使用情况:${plain}"
     df -h | grep -E '^/dev/'
     echo -e "${green}系统负载:${plain} $(uptime | awk -F'load average:' '{print $2}')"
@@ -730,15 +758,69 @@ system_info() {
 }
 
 #====================================================
-# 系统更新（含安装 Git）
+# 系统更新（自动优先使用国内源，含 Git 安装）
 #====================================================
 system_update() {
-    _info "开始系统更新..."
+    _info "开始系统更新 (将优先使用国内镜像源)..."
+    
+    # 备份并更换国内源
     if command -v apt &>/dev/null; then
-        apt update && apt upgrade -y
+        # Debian / Ubuntu
+        if [ ! -f /etc/apt/sources.list.bak ]; then
+            cp /etc/apt/sources.list /etc/apt/sources.list.bak
+            _info "已备份原软件源到 /etc/apt/sources.list.bak"
+        fi
+        # 获取发行版名称和代号
+        if grep -qi "ubuntu" /etc/os-release; then
+            CODENAME=$(lsb_release -sc 2>/dev/null)
+            if [ -n "$CODENAME" ]; then
+                cat > /etc/apt/sources.list <<EOF
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-updates main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-backports main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-security main restricted universe multiverse
+EOF
+                _info "已更换为清华源 (Ubuntu $CODENAME)"
+            else
+                _warn "无法获取 Ubuntu 版本代号，跳过换源"
+            fi
+        else
+            # Debian
+            CODENAME=$(lsb_release -sc 2>/dev/null)
+            if [ -n "$CODENAME" ]; then
+                cat > /etc/apt/sources.list <<EOF
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME main contrib non-free non-free-firmware
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME-updates main contrib non-free non-free-firmware
+deb https://mirrors.tuna.tsinghua.edu.cn/debian-security $CODENAME-security main contrib non-free non-free-firmware
+EOF
+                _info "已更换为清华源 (Debian $CODENAME)"
+            else
+                _warn "无法获取 Debian 版本代号，跳过换源"
+            fi
+        fi
+        apt update
+        apt upgrade -y
         _info "正在安装/更新 Git..."
         apt install -y git
     elif command -v yum &>/dev/null; then
+        # CentOS / RHEL
+        if grep -qi "release 7" /etc/centos-release 2>/dev/null; then
+            if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
+                cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+                _info "已备份原 yum 源"
+            fi
+            curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
+            _info "已更换为阿里云 CentOS 7 源"
+        elif grep -qi "release 8" /etc/centos-release 2>/dev/null; then
+            if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
+                cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+            fi
+            curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-8.repo
+            _info "已更换为阿里云 CentOS 8 源"
+        else
+            _warn "不支持的 CentOS 版本，跳过换源"
+        fi
+        yum makecache
         yum update -y
         _info "正在安装/更新 Git..."
         yum install -y git
@@ -798,7 +880,7 @@ update_script() {
 }
 
 #====================================================
-# 主菜单（加粗、增加新功能）
+# 主菜单（加粗、增大文字）
 #====================================================
 show_main_menu() {
     clear
@@ -813,7 +895,7 @@ show_main_menu() {
     echo -e "${bold}${green}【5】${plain} 一键安装/修复/清理 1Panel面板"
     echo -e "${bold}${green}【6】${plain} Docker 一站式管理（安装/卸载/更新/容器）"
     echo -e "${bold}${green}【7】${plain} 系统信息查询"
-    echo -e "${bold}${green}【8】${plain} 系统更新（含 Git 安装）"
+    echo -e "${bold}${green}【8】${plain} 系统更新（自动国内源，含 Git）"
     echo -e "${bold}${green}【9】${plain} 系统清理"
     echo ""
     echo -e " ------------------------"
