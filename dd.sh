@@ -47,6 +47,10 @@ myPASSWORD=""
 # 脚本自身路径
 SCRIPT_PATH=$(realpath "$0")
 
+# GitHub 加速配置
+GITHUB_PROXY="${GITHUB_PROXY:-https://ghproxy.com/}"
+GITHUB_RAW_URL="https://raw.githubusercontent.com"
+
 #====================================================
 # 工具函数
 #====================================================
@@ -914,12 +918,12 @@ disk_usage() {
 
 ludashi2020_test() {
     _info "三网线路测试..."
-    wget -qO- https://raw.githubusercontent.com/zhanghanyun/backtrace/main/test.sh | bash
+    wget -qO- "${GITHUB_PROXY}${GITHUB_RAW_URL}/zhanghanyun/backtrace/main/test.sh" | bash
 }
 
 spiritysdx_test() {
     _info "融合怪测评..."
-    bash <(curl -sL https://raw.githubusercontent.com/spiritLHLS/ecs/main/ecs.sh)
+    bash <(curl -sL "${GITHUB_PROXY}${GITHUB_RAW_URL}/spiritLHLS/ecs/main/ecs.sh")
 }
 
 nodequality_test() {
@@ -1123,7 +1127,7 @@ EOFSCRIPT
         echo -e "${cyan}请重新登录或执行: source /etc/profile.d/powerline.sh${plain}"
     else
         _warn "Powerline安装失败，尝试安装oh-my-zsh替代方案..."
-        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        sh -c "$(curl -fsSL "${GITHUB_PROXY}${GITHUB_RAW_URL}/ohmyzsh/ohmyzsh/master/tools/install.sh")" "" --unattended
     fi
     echo -e "${cyan}按 Enter 返回${plain}"
     read -r
@@ -1177,7 +1181,7 @@ update_script() {
     _info "正在检查脚本更新..."
     local tmp_path="/tmp/dd_install_new.sh"
     local remote_urls=(
-        "https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh"
+        "${GITHUB_PROXY}${GITHUB_RAW_URL}/sdlw7757/dd-script/main/dd.sh"
         "https://raw.gitmirror.com/sdlw7757/dd-script/main/dd.sh"
         "https://ghproxy.net/https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh"
     )
