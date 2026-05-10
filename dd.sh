@@ -1101,7 +1101,7 @@ beautify_terminal() {
         yum install -y powerline git
     fi
     
-    if [ -f /usr/share/powerline/distinctives/ps1.py ]; then
+    if [ -f /usr/share/powerline/bindings/bash/powerline.sh ]; then
         cat > /tmp/powerline_ps1.sh <<'EOFSCRIPT'
 if [ -f /usr/share/powerline/bindings/bash/powerline.sh ]; then
     export TERM="screen-256color"
@@ -1121,7 +1121,7 @@ EOFSCRIPT
         _info "命令行美化工具安装完成！"
         echo -e "${cyan}请重新登录或执行: source /etc/profile.d/powerline.sh${plain}"
     else
-        _warn "Powerline安装失败，尝试安装oh-my-zsh替代方案..."
+        _warn "Powerline未正确安装，尝试安装oh-my-zsh替代方案..."
         sh -c "$(curl -fsSL https://gitee.com/mirrors_ohmyzsh/ohmyzsh/raw/master/tools/install.sh)" "" --unattended
     fi
     echo -e "${cyan}按 Enter 返回${plain}"
