@@ -918,17 +918,12 @@ disk_usage() {
 
 ludashi2020_test() {
     _info "三网线路测试..."
-    wget -qO- "${GITHUB_PROXY}${GITHUB_RAW_URL}/zhanghanyun/backtrace/main/test.sh" | bash
+    bash <(curl -Lso- https://git.io/superspeed)
 }
 
-spiritysdx_test() {
+ecs_test() {
     _info "融合怪测评..."
-    bash <(curl -sL "${GITHUB_PROXY}${GITHUB_RAW_URL}/spiritLHLS/ecs/main/ecs.sh")
-}
-
-nodequality_test() {
-    _info "系统性能测评..."
-    curl -sL https://bench.sh | bash
+    curl -L "${GITHUB_PROXY}https://github.com/spiritLHLS/ecs/raw/main/ecs.sh" -o ecs.sh && chmod +x ecs.sh && bash ecs.sh
 }
 
 change_mirror() {
@@ -1141,15 +1136,15 @@ basic_tools_menu() {
         echo -e "${green}2) 网络测试 (ping)${plain}"
         echo -e "${green}3) 端口扫描 (nc)${plain}"
         echo -e "${green}4) 查看磁盘使用情况${plain}"
-        echo -e "${green}5) ludashi2020 三网线路测试${plain}"
-        echo -e "${green}6) spiritysdx 融合怪测评 ★${plain}"
-        echo -e "${green}7) nodequality 融合怪测评 ★${plain}"
-        echo -e "${green}8) 切换系统更新源${plain}"
-        echo -e "${green}9) 查看端口占用状态${plain}"
-        echo -e "${green}10) 开放所有端口${plain}"
-        echo -e "${green}11) 修改SSH连接端口${plain}"
-        echo -e "${green}12) Linux系统内核参数优化 ★${plain}"
-        echo -e "${green}13) 命令行美化工具 ★${plain}"
+        echo -e "${green}5) 三网线路测试${plain}"
+        echo -e "${green}6) 融合怪测评 ★${plain}"
+        echo -e "${green}7) 切换系统更新源${plain}"
+        echo -e "${green}8) 查看端口占用状态${plain}"
+        echo -e "${green}9) 开放所有端口${plain}"
+        echo -e "${green}10) 修改SSH连接端口${plain}"
+        echo -e "${green}11) Linux系统内核参数优化 ★${plain}"
+        echo -e "${green}12) 命令行美化工具 ★${plain}"
+        echo -e "${cyan}======================================${plain}"
         echo -e "${green}0) 返回主菜单${plain}"
         read -r opt
         case $opt in
@@ -1158,14 +1153,13 @@ basic_tools_menu() {
             3) port_scan ;;
             4) disk_usage ;;
             5) ludashi2020_test ;;
-            6) spiritysdx_test ;;
-            7) nodequality_test ;;
-            8) change_mirror ;;
-            9) check_port_usage ;;
-            10) open_all_ports ;;
-            11) change_ssh_port ;;
-            12) optimize_kernel ;;
-            13) beautify_terminal ;;
+            6) ecs_test ;;
+            7) change_mirror ;;
+            8) check_port_usage ;;
+            9) open_all_ports ;;
+            10) change_ssh_port ;;
+            11) optimize_kernel ;;
+            12) beautify_terminal ;;
             0) return ;;
             *) _warn "无效输入" ;;
         esac
