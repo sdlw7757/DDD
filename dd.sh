@@ -913,18 +913,18 @@ disk_usage() {
 }
 
 ludashi2020_test() {
-    _info "三网线路测试 (ludashi2020)..."
-    curl -sL https://raw.githubusercontent.com/ludashi2020/LinuxTest/master/auto.sh | bash
+    _info "三网线路测试..."
+    wget -qO- https://raw.githubusercontent.com/zhanghanyun/backtrace/main/test.sh | bash
 }
 
 spiritysdx_test() {
-    _info "融合怪测评 (spiritysdx)..."
-    curl -sL https://raw.githubusercontent.com/spiritLHLS/1VPS/master/ecs.sh | bash
+    _info "融合怪测评..."
+    bash <(curl -sL https://raw.githubusercontent.com/spiritLHLS/ecs/main/ecs.sh)
 }
 
 nodequality_test() {
-    _info "融合怪测评 (nodequality)..."
-    curl -sL https://raw.githubusercontent.com/nodequality/LinuxBenchmark/main/auto.sh | bash
+    _info "系统性能测评..."
+    curl -sL https://bench.sh | bash
 }
 
 change_mirror() {
