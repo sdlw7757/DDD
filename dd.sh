@@ -1122,7 +1122,7 @@ EOFSCRIPT
         echo -e "${cyan}请重新登录或执行: source /etc/profile.d/powerline.sh${plain}"
     else
         _warn "Powerline安装失败，尝试安装oh-my-zsh替代方案..."
-        sh -c "$(curl -fsSL "${GITHUB_PROXY}${GITHUB_RAW_URL}/ohmyzsh/ohmyzsh/master/tools/install.sh")" "" --unattended
+        sh -c "$(curl -fsSL https://gitee.com/mirrors_ohmyzsh/ohmyzsh/raw/master/tools/install.sh)" "" --unattended
     fi
     echo -e "${cyan}按 Enter 返回${plain}"
     read -r
