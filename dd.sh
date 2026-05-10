@@ -923,7 +923,7 @@ ludashi2020_test() {
 
 ecs_test() {
     _info "融合怪测评..."
-    curl -L "${GITHUB_PROXY}https://github.com/spiritLHLS/ecs/raw/main/ecs.sh" -o ecs.sh && chmod +x ecs.sh && bash ecs.sh
+    curl -L https://github.com/spiritLHLS/ecs/raw/main/ecs.sh -o ecs.sh && chmod +x ecs.sh && bash ecs.sh
 }
 
 change_mirror() {
