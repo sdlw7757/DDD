@@ -1,39 +1,39 @@
-#!/bin/bash
+#! /bin/bash
 #====================================================
 # 全功能DD脚本 - 支持Ubuntu/Debian/CentOS全系列重装
 # 支持宝塔面板 / 1Panel 面板 / Docker 一站式管理 / 基础工具
 # 默认root密码: 123456 (可修改)
-# 脚本更新地址: https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh
+# 脚本更新地址: https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh
 #====================================================
 
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+导出 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 颜色定义（加粗使用 \033[1m）
-red='\033[0;31m'
-green='\033[0;32m'
-yellow='\033[0;33m'
-blue='\033[0;34m'
-magenta='\033[0;35m'
-cyan='\033[0;36m'
-bold='\033[1m'
-plain='\033[0m'
+红色=\033[0;31m='\033[0;31m'
+绿色='\033[0;32m'='\033[0;32m'
+黄色=\033[0;33m='\033[0;33m'
+蓝色=\033[0;34m='\033[0;34m'
+品红色=\033[0;35m='\033[0;35m'
+青色=''\033[0;36m'='\033[0;36m'
+粗体=''\033[1m'='\033[1m'
+plain=''\033[0m''='\033[0m'
 
 # 默认配置
-DEFAULT_PASSWORD="123456"
-DEFAULT_SSH_PORT="22"
-DEFAULT_AUTO_NET=1
-DEFAULT_IPV6_ENABLE=1
-DEFAULT_FIRMWARE=0
+默认密码="123456"="123456"
+DEFAULT_SSH_PORT="22"="22"
+DEFAULT_AUTO_NET=1=1
+DEFAULT_IPV6_ENABLE=1=1
+默认固件=0=0
 
 # 全局变量
-ROOT_PASS="$DEFAULT_PASSWORD"
-SSH_PORT="$DEFAULT_SSH_PORT"
+ROOT_PASS="$默认密码"="$DEFAULT_PASSWORD"
+SSH_PORT="默认的SSH端口"
 USE_STATIC=0
-STATIC_IP=""
-STATIC_MASK=""
-STATIC_GATE=""
+静态IP=""
+静态掩码=""
+静态门=""
 STATIC_DNS="8.8.8.8"
-setIPv6=0
+设置IPv6=0
 IncFirmware=0
 SELECTED_OS=""
 SELECTED_VERSION=""
