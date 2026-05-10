@@ -1090,44 +1090,6 @@ EOF
     read -r
 }
 
-beautify_terminal() {
-    _need_root
-    _info "安装命令行美化工具 (Powerline-git)..."
-    
-    if command -v apt &>/dev/null; then
-        apt update -y
-        apt install -y powerline git fonts-powerline
-    elif command -v yum &>/dev/null; then
-        yum install -y powerline git
-    fi
-    
-    if [ -f /usr/share/powerline/bindings/bash/powerline.sh ]; then
-        cat > /tmp/powerline_ps1.sh <<'EOFSCRIPT'
-if [ -f /usr/share/powerline/bindings/bash/powerline.sh ]; then
-    export TERM="screen-256color"
-    powerline-daemon -q
-    POWERLINE_BASH_CONTINUATION=1
-    POWERLINE_BASH_SELECT=1
-    source /usr/share/powerline/bindings/bash/powerline.sh
-fi
-EOFSCRIPT
-        cat /tmp/powerline_ps1.sh >> /etc/profile.d/powerline.sh
-        chmod +x /etc/profile.d/powerline.sh
-        
-        if command -v fc-cache &>/dev/null; then
-            fc-cache -vf 2>/dev/null
-        fi
-        
-        _info "命令行美化工具安装完成！"
-        echo -e "${cyan}请重新登录或执行: source /etc/profile.d/powerline.sh${plain}"
-    else
-        _warn "Powerline未正确安装，尝试安装oh-my-zsh替代方案..."
-        sh -c "$(curl -fsSL https://gitee.com/mirrors_ohmyzsh/ohmyzsh/raw/master/tools/install.sh)" "" --unattended
-    fi
-    echo -e "${cyan}按 Enter 返回${plain}"
-    read -r
-}
-
 basic_tools_menu() {
     while true; do
         clear
@@ -1143,7 +1105,6 @@ basic_tools_menu() {
         echo -e "${green}9) 开放所有端口${plain}"
         echo -e "${green}10) 修改SSH连接端口${plain}"
         echo -e "${green}11) Linux系统内核参数优化 ★${plain}"
-        echo -e "${green}12) 命令行美化工具 ★${plain}"
         echo -e "${cyan}======================================${plain}"
         echo -e "${green}0) 返回主菜单${plain}"
         read -r opt
@@ -1159,7 +1120,6 @@ basic_tools_menu() {
             9) open_all_ports ;;
             10) change_ssh_port ;;
             11) optimize_kernel ;;
-            12) beautify_terminal ;;
             0) return ;;
             *) _warn "无效输入" ;;
         esac
