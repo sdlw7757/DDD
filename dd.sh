@@ -1,4 +1,4 @@
-#! /bin/bash
+#!/bin/bash
 #====================================================
 # 全功能DD脚本 - 支持Ubuntu/Debian/CentOS全系列重装
 # 支持宝塔面板 / 1Panel 面板 / Docker 一站式管理 / 基础工具
@@ -6,34 +6,34 @@
 # 脚本更新地址: https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh
 #====================================================
 
-导出 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # 颜色定义（加粗使用 \033[1m）
-红色=\033[0;31m='\033[0;31m'
-绿色='\033[0;32m'='\033[0;32m'
-黄色=\033[0;33m='\033[0;33m'
-蓝色=\033[0;34m='\033[0;34m'
-品红色=\033[0;35m='\033[0;35m'
-青色=''\033[0;36m'='\033[0;36m'
-粗体=''\033[1m'='\033[1m'
-plain=''\033[0m''='\033[0m'
+red='\033[0;31m'
+green='\033[0;32m'
+yellow='\033[0;33m'
+blue='\033[0;34m'
+magenta='\033[0;35m'
+cyan='\033[0;36m'
+bold='\033[1m'
+plain='\033[0m'
 
 # 默认配置
-默认密码="123456"="123456"
-DEFAULT_SSH_PORT="22"="22"
-DEFAULT_AUTO_NET=1=1
-DEFAULT_IPV6_ENABLE=1=1
-默认固件=0=0
+DEFAULT_PASSWORD="123456"
+DEFAULT_SSH_PORT="22"
+DEFAULT_AUTO_NET=1
+DEFAULT_IPV6_ENABLE=1
+DEFAULT_FIRMWARE=0
 
 # 全局变量
-ROOT_PASS="$默认密码"="$DEFAULT_PASSWORD"
-SSH_PORT="默认的SSH端口"
+ROOT_PASS="$DEFAULT_PASSWORD"
+SSH_PORT="$DEFAULT_SSH_PORT"
 USE_STATIC=0
-静态IP=""
-静态掩码=""
-静态门=""
+STATIC_IP=""
+STATIC_MASK=""
+STATIC_GATE=""
 STATIC_DNS="8.8.8.8"
-设置IPv6=0
+setIPv6=0
 IncFirmware=0
 SELECTED_OS=""
 SELECTED_VERSION=""
@@ -1175,9 +1175,9 @@ update_script() {
     _info "正在检查脚本更新..."
     local tmp_path="/tmp/dd_install_new.sh"
     local remote_urls=(
-        "${GITHUB_PROXY}${GITHUB_RAW_URL}/sdlw7757/dd-script/main/dd.sh"
-        "https://raw.gitmirror.com/sdlw7757/dd-script/main/dd.sh"
-        "https://ghproxy.net/https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh"
+        "${GITHUB_PROXY}${GITHUB_RAW_URL}/sdlw7757/dd-script/refs/heads/main/dd.sh"
+        "https://raw.gitmirror.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
+        "https://ghproxy.net/https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
     )
     for url in "${remote_urls[@]}"; do
         _info "尝试从 $url 下载..."
@@ -1196,7 +1196,7 @@ update_script() {
         fi
     done
     _warn "所有更新源均失败，请检查网络或手动更新"
-    _warn "手动更新命令: wget -O $SCRIPT_PATH https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh && sed -i 's/\\r\$//' $SCRIPT_PATH"
+    _warn "手动更新命令: wget -O $SCRIPT_PATH https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh && sed -i 's/\\r\$//' $SCRIPT_PATH"
     echo -e "${cyan}按 r 重试，按 Enter 返回主菜单${plain}"
     read -r retry_opt
     if [[ "$retry_opt" == "r" || "$retry_opt" == "R" ]]; then
