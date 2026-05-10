@@ -1174,6 +1174,7 @@ basic_tools_menu() {
 update_script() {
     _info "正在检查脚本更新..."
     local tmp_path="/tmp/dd_install_new.sh"
+    local timeout=15
     local remote_urls=(
         "https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
         "https://raw.gitmirror.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
@@ -1181,7 +1182,7 @@ update_script() {
     )
     for url in "${remote_urls[@]}"; do
         _info "尝试从 $url 下载..."
-        if wget --no-check-certificate -qO "$tmp_path" "$url" || curl -k -o "$tmp_path" "$url"; then
+        if wget --timeout="$timeout" --no-check-certificate -qO "$tmp_path" "$url" 2>/dev/null || curl --connect-timeout "$timeout" --max-time "$timeout" -k -o "$tmp_path" "$url" 2>/dev/null; then
             sed -i 's/\r$//' "$tmp_path"
             if head -1 "$tmp_path" | grep -q "#!/bin/bash"; then
                 cp "$tmp_path" "$SCRIPT_PATH"
@@ -1193,6 +1194,8 @@ update_script() {
                 _warn "下载的文件无效，尝试下一源"
                 continue
             fi
+        else
+            _warn "从 $url 下载失败，尝试下一源"
         fi
     done
     _warn "所有更新源均失败，请检查网络或手动更新"
