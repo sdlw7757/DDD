@@ -1175,9 +1175,9 @@ update_script() {
     _info "正在检查脚本更新..."
     local tmp_path="/tmp/dd_install_new.sh"
     local remote_urls=(
-        "${GITHUB_PROXY}${GITHUB_RAW_URL}/sdlw7757/dd-script/refs/heads/main/dd.sh"
+        "https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
         "https://raw.gitmirror.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
-        "https://ghproxy.net/https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
+        "https://ghproxy.com/https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh"
     )
     for url in "${remote_urls[@]}"; do
         _info "尝试从 $url 下载..."
