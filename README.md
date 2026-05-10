@@ -74,8 +74,8 @@ dd.sh
 ### 手动更新脚本
 
 ```bash
-# 使用加速链接更新
-curl -o /usr/local/bin/dd.sh https://ghproxy.com/https://raw.githubusercontent.com/sdlw7757/dd-script/main/dd.sh && chmod +x /usr/local/bin/dd.sh
+# 脚本更新命令
+curl -o /usr/local/bin/dd.sh https://raw.githubusercontent.com/sdlw7757/dd-script/refs/heads/main/dd.sh && sed -i 's/\r$//' /usr/local/bin/dd.sh && chmod +x /usr/local/bin/dd.sh && y
 ```
 
 ## 📝 更新日志
