@@ -912,6 +912,223 @@ disk_usage() {
     read -r
 }
 
+ludashi2020_test() {
+    _info "三网线路测试 (ludashi2020)..."
+    curl -sL https://raw.githubusercontent.com/ludashi2020/LinuxTest/master/auto.sh | bash
+}
+
+spiritysdx_test() {
+    _info "融合怪测评 (spiritysdx)..."
+    curl -sL https://raw.githubusercontent.com/spiritLHLS/1VPS/master/ecs.sh | bash
+}
+
+nodequality_test() {
+    _info "融合怪测评 (nodequality)..."
+    curl -sL https://raw.githubusercontent.com/nodequality/LinuxBenchmark/main/auto.sh | bash
+}
+
+change_mirror() {
+    _need_root
+    _info "开始一键更换国内源..."
+    
+    if command -v apt &>/dev/null; then
+        if [ ! -f /etc/apt/sources.list.bak ]; then
+            cp /etc/apt/sources.list /etc/apt/sources.list.bak
+            _info "已备份原软件源到 /etc/apt/sources.list.bak"
+        fi
+        if grep -qi "ubuntu" /etc/os-release; then
+            CODENAME=$(lsb_release -sc 2>/dev/null)
+            if [ -n "$CODENAME" ]; then
+                cat > /etc/apt/sources.list <<EOF
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-updates main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-backports main restricted universe multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ $CODENAME-security main restricted universe multiverse
+EOF
+                _info "已更换为清华源 (Ubuntu $CODENAME)"
+            fi
+        else
+            CODENAME=$(lsb_release -sc 2>/dev/null)
+            if [ -n "$CODENAME" ]; then
+                cat > /etc/apt/sources.list <<EOF
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME main contrib non-free non-free-firmware
+deb https://mirrors.tuna.tsinghua.edu.cn/debian/ $CODENAME-updates main contrib non-free non-free-firmware
+deb https://mirrors.tuna.tsinghua.edu.cn/debian-security $CODENAME-security main contrib non-free non-free-firmware
+EOF
+                _info "已更换为清华源 (Debian $CODENAME)"
+            fi
+        fi
+        apt update
+        _info "软件源已更新"
+    elif command -v yum &>/dev/null; then
+        if grep -qi "release 7" /etc/centos-release 2>/dev/null; then
+            if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
+                cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+                _info "已备份原 yum 源"
+            fi
+            curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
+            _info "已更换为阿里云 CentOS 7 源"
+        elif grep -qi "release 8" /etc/centos-release 2>/dev/null; then
+            if [ ! -f /etc/yum.repos.d/CentOS-Base.repo.bak ]; then
+                cp /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak 2>/dev/null
+            fi
+            curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-8.repo
+            _info "已更换为阿里云 CentOS 8 源"
+        fi
+        yum makecache
+        _info "软件源已更新"
+    else
+        _error "不支持的系统包管理器"
+    fi
+    echo -e "${cyan}按 Enter 返回工具菜单${plain}"
+    read -r
+}
+
+check_port_usage() {
+    echo -e "${cyan}查看端口占用状态...${plain}"
+    echo -e "${green}TCP 端口占用:${plain}"
+    netstat -tuln | grep LISTEN | awk '{print $1, $4, $6}' | column -t
+    echo ""
+    echo -e "${green}进程端口映射:${plain}"
+    netstat -tulnp 2>/dev/null | grep LISTEN | awk '{print $7}' | cut -d'/' -f1 | sort -n | uniq | while read pid; do
+        if [ -n "$pid" ]; then
+            process=$(ps -p "$pid" -o comm= 2>/dev/null)
+            echo "PID $pid: $process"
+        fi
+    done
+    echo -e "${cyan}按 Enter 返回${plain}"
+    read -r
+}
+
+open_all_ports() {
+    _need_root
+    _info "开放所有端口..."
+    if command -v ufw &>/dev/null; then
+        ufw disable
+        ufw --force reset
+        echo "y" | ufw enable
+        ufw allow 1:65535/tcp
+        ufw allow 1:65535/udp
+        ufw reload
+        _info "已开放所有端口 (1-65535 TCP/UDP)"
+    elif command -v firewall-cmd &>/dev/null; then
+        firewall-cmd --permanent --add-port=1-65535/tcp
+        firewall-cmd --permanent --add-port=1-65535/udp
+        firewall-cmd --reload
+        _info "已开放所有端口 (1-65535 TCP/UDP)"
+    else
+        _warn "未检测到防火墙工具 (ufw/firewalld)"
+    fi
+    echo -e "${cyan}按 Enter 返回${plain}"
+    read -r
+}
+
+change_ssh_port() {
+    _need_root
+    echo -e "${cyan}修改SSH连接端口${plain}"
+    CURRENT_PORT=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}')
+    if [ -z "$CURRENT_PORT" ]; then
+        CURRENT_PORT="22"
+    fi
+    echo -e "${green}当前SSH端口: ${CURRENT_PORT}${plain}"
+    echo -e "${cyan}请输入新端口 (建议使用高位端口如 2222):${plain}"
+    read -r NEW_PORT
+    if [ -z "$NEW_PORT" ]; then
+        _warn "端口不能为空"
+        return
+    fi
+    if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
+        _error "端口必须在 1-65535 之间"
+    fi
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+    sed -i "s/^#\?Port.*/Port $NEW_PORT/" /etc/ssh/sshd_config
+    echo -e "${green}SSH端口已修改为: ${NEW_PORT}${plain}"
+    echo -e "${yellow}正在重启SSH服务...${plain}"
+    systemctl restart sshd
+    echo -e "${cyan}注意: 如果连接失败，请使用新端口: ${NEW_PORT}${plain}"
+    echo -e "${cyan}按 Enter 返回${plain}"
+    read -r
+}
+
+optimize_kernel() {
+    _need_root
+    _info "开始优化Linux系统内核参数..."
+    cat >> /etc/sysctl.conf <<EOF
+
+# ========== 网络参数优化 ==========
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.ipv4.tcp_fin_timeout = 30
+net.ipv4.tcp_max_tw_buckets = 10000
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_sack = 1
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 16384 16777216
+net.ipv4.tcp_mem = 94587456 157286400 189174912
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_timestamps = 0
+net.ipv4.tcp_sack = 0
+net.ipv4.tcp_syncookies = 0
+
+# ========== 文件描述符优化 ==========
+fs.file-max = 1000000
+fs.nr_open = 1000000
+
+# ========== 内存优化 ==========
+vm.swappiness = 10
+vm.dirty_ratio = 15
+vm.dirty_background_ratio = 5
+vm.overcommit_memory = 1
+EOF
+    sysctl -p > /dev/null 2>&1
+    echo "* soft nofile 1000000" >> /etc/security/limits.conf
+    echo "* hard nofile 1000000" >> /etc/security/limits.conf
+    echo "ulimit -n 1000000" >> /etc/profile
+    _info "内核参数优化完成！"
+    echo -e "${cyan}按 Enter 返回${plain}"
+    read -r
+}
+
+beautify_terminal() {
+    _need_root
+    _info "安装命令行美化工具 (Powerline-git)..."
+    
+    if command -v apt &>/dev/null; then
+        apt update -y
+        apt install -y powerline git fonts-powerline
+    elif command -v yum &>/dev/null; then
+        yum install -y powerline git
+    fi
+    
+    if [ -f /usr/share/powerline/distinctives/ps1.py ]; then
+        cat > /tmp/powerline_ps1.sh <<'EOFSCRIPT'
+if [ -f /usr/share/powerline/bindings/bash/powerline.sh ]; then
+    export TERM="screen-256color"
+    powerline-daemon -q
+    POWERLINE_BASH_CONTINUATION=1
+    POWERLINE_BASH_SELECT=1
+    source /usr/share/powerline/bindings/bash/powerline.sh
+fi
+EOFSCRIPT
+        cat /tmp/powerline_ps1.sh >> /etc/profile.d/powerline.sh
+        chmod +x /etc/profile.d/powerline.sh
+        
+        if command -v fc-cache &>/dev/null; then
+            fc-cache -vf 2>/dev/null
+        fi
+        
+        _info "命令行美化工具安装完成！"
+        echo -e "${cyan}请重新登录或执行: source /etc/profile.d/powerline.sh${plain}"
+    else
+        _warn "Powerline安装失败，尝试安装oh-my-zsh替代方案..."
+        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    fi
+    echo -e "${cyan}按 Enter 返回${plain}"
+    read -r
+}
+
 basic_tools_menu() {
     while true; do
         clear
@@ -920,6 +1137,15 @@ basic_tools_menu() {
         echo -e "${green}2) 网络测试 (ping)${plain}"
         echo -e "${green}3) 端口扫描 (nc)${plain}"
         echo -e "${green}4) 查看磁盘使用情况${plain}"
+        echo -e "${green}5) ludashi2020 三网线路测试${plain}"
+        echo -e "${green}6) spiritysdx 融合怪测评 ★${plain}"
+        echo -e "${green}7) nodequality 融合怪测评 ★${plain}"
+        echo -e "${green}8) 切换系统更新源${plain}"
+        echo -e "${green}9) 查看端口占用状态${plain}"
+        echo -e "${green}10) 开放所有端口${plain}"
+        echo -e "${green}11) 修改SSH连接端口${plain}"
+        echo -e "${green}12) Linux系统内核参数优化 ★${plain}"
+        echo -e "${green}13) 命令行美化工具 ★${plain}"
         echo -e "${green}0) 返回主菜单${plain}"
         read -r opt
         case $opt in
@@ -927,6 +1153,15 @@ basic_tools_menu() {
             2) network_test ;;
             3) port_scan ;;
             4) disk_usage ;;
+            5) ludashi2020_test ;;
+            6) spiritysdx_test ;;
+            7) nodequality_test ;;
+            8) change_mirror ;;
+            9) check_port_usage ;;
+            10) open_all_ports ;;
+            11) change_ssh_port ;;
+            12) optimize_kernel ;;
+            13) beautify_terminal ;;
             0) return ;;
             *) _warn "无效输入" ;;
         esac
